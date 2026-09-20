@@ -1719,6 +1719,33 @@ function SettingsModal() {
               </div>
 
               <div className="settings-field">
+                <label className="settings-label">
+                  TIMER TEXT SIZE — {Math.round((settings.timerTextScale ?? 1) * 100)}%
+                </label>
+                <p className="settings-help" style={{ marginTop: '4px', marginBottom: '8px' }}>
+                  Scales the countdown and its description. Increase this when projecting to a room.
+                </p>
+                <input
+                  type="range"
+                  min="50"
+                  max="200"
+                  step="10"
+                  className="settings-range"
+                  value={Math.round((settings.timerTextScale ?? 1) * 100)}
+                  onChange={(e) =>
+                    updateSettings({
+                      timerTextScale: Number(e.target.value) / 100,
+                    })
+                  }
+                />
+                <div className="settings-range-ticks">
+                  <span>50%</span>
+                  <span>100%</span>
+                  <span>200%</span>
+                </div>
+              </div>
+
+              <div className="settings-field">
                 <label className="settings-label">BREAK ALERT THEME</label>
                 <p className="settings-help" style={{ marginTop: '4px', marginBottom: '8px' }}>
                   Change the theme when approaching a scheduled break time.

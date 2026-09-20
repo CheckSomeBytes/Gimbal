@@ -440,6 +440,7 @@ function Header() {
       danger: theme.colors.danger,
       fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
       border: theme.colors.border,
+      textScale: currentProfile.settings.timerTextScale,
     });
     addNotification('Countdown timer opened!', 'success');
   };
@@ -482,6 +483,7 @@ function Header() {
         danger: theme.colors.danger,
         fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
         border: theme.colors.border,
+        textScale: currentProfile.settings.timerTextScale,
       });
 
       addNotification('Time estimate sent and timer opened!', 'success');
@@ -508,6 +510,7 @@ function Header() {
       danger: theme.colors.danger,
       fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
       border: theme.colors.border,
+      textScale: currentProfile.settings.timerTextScale,
     });
     addNotification('Countdown timer opened!', 'success');
     setShowTimeEstimatePopup(false);

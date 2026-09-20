@@ -996,6 +996,8 @@ interface TimerTheme {
   danger: string;
   fontFamily: string;
   border?: string;
+  /** Text size multiplier for the countdown window; 1 = default. */
+  textScale?: number;
 }
 
 // Open a countdown timer window
@@ -1007,8 +1009,10 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     }
 
     countdownWindow = new BrowserWindow({
-      width: 640,
-      height: 360,
+      width: 960,
+      height: 540,
+      minWidth: 320,
+      minHeight: 200,
       alwaysOnTop: true,
       frame: false,
       resizable: true,
@@ -1025,6 +1029,8 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
 
     // Create HTML content for the countdown timer
     const totalSeconds = totalMinutes * 60;
+    // Clamp: a stored value outside this range would make the window unusable.
+    const textScale = Math.min(2, Math.max(0.5, theme.textScale || 1));
     const escapedMessage = message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
     const htmlContent = `<!DOCTYPE html>
@@ -1114,13 +1120,17 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       display: flex;
       flex-direction: column;
       align-items: center;
+      flex-shrink: 1;
+      min-height: 0;
+      overflow: hidden;
+      max-height: 40vh;
       gap: 2px;
-      margin-bottom: 8px;
+      margin-bottom: min(2vh, 14px);
       max-width: 100%;
     }
-    .message { font-size: ${theme.fontFamily.includes('Lexend') || theme.fontFamily.includes('sans-serif') || theme.fontFamily === 'sans-serif' ? '11px' : '8px'}; color: ${theme.textMuted}; word-wrap: break-word; line-height: 1.4; text-align: center; }
+    .message { font-size: calc(${theme.fontFamily.includes('Lexend') || theme.fontFamily.includes('sans-serif') || theme.fontFamily === 'sans-serif' ? 'min(5.5vw, 8.5vh)' : 'min(4vw, 6vh)'} * ${textScale}); color: ${theme.text}; word-wrap: break-word; line-height: 1.35; text-align: center; }
     .message-line { display: block; }
-    .message-separator { color: ${theme.textMuted}; font-size: 10px; }
+    .message-separator { color: ${theme.textMuted}; font-size: calc(min(3.5vw, 5vh) * ${textScale}); }
     .message-edit-btn {
       background: ${theme.background};
       border: 2px solid ${theme.textMuted};
@@ -1154,8 +1164,15 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       outline: none;
     }
     .timer {
-      font-size: 43px;
+      /* Scales with the window so the timer stays readable when the
+         window is resized or the display is projected. At large scales the
+         flex layout shrinks this to fit rather than letting it overflow. */
+      font-size: calc(min(22vw, 34vh) * ${textScale});
+      line-height: 1.05;
       font-weight: bold;
+      flex-shrink: 1;
+      min-height: 0;
+      white-space: nowrap;
       color: ${theme.accent};
       font-family: ${theme.fontFamily};
     }

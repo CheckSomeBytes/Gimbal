@@ -64,6 +64,7 @@ export interface Settings {
   breakAlertMinutes: number; // Minutes before break to trigger alert theme (default 5)
   lastLaunchDate?: string; // ISO date string of last launch
   timerFontFamily?: string; // Font family for countdown timer (falls back to theme.fontFamily)
+  timerTextScale?: number; // Countdown timer text size multiplier (1 = default, higher = larger)
   labNotes?: Record<string, string>; // Lab notes keyed by lab number (e.g., "4.1")
   todos?: Todo[]; // Instructor todo list (per profile)
   backupSettings?: BackupSettings;
