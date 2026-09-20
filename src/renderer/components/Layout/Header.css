@@ -996,3 +996,18 @@ input.lab-popup-input-small.lab-popup-input-small--active {
   outline: none;
 }
 
+
+/* Lab notes popup: wider than the standard popup to give the markdown
+   editor and preview room for code blocks and tables. */
+.lab-popup-overlay--top-anchored .lab-popup--notes {
+  width: 760px;
+  max-width: calc(100vw - 48px);
+  max-height: 85vh;
+}
+
+.lab-popup--notes .lab-popup-content {
+  /* The editor manages its own internal scrolling. */
+  overflow: visible;
+  display: flex;
+  min-height: 0;
+}

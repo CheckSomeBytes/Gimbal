@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="docs/images/logo.png" alt="Gimbal" width="220">
+</div>
+
 # Gimbal
 
 > Stay the Course

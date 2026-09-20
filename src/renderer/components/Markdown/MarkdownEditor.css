@@ -1,0 +1,166 @@
+/* Markdown editor chrome. Theme-variable driven so it tracks every theme. */
+
+.md-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: var(--spacing-sm);
+}
+
+/* Tab strip */
+.md-editor-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.md-editor-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* Mode toggle - matches the READ/EDIT switch in the main header. */
+.md-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.md-mode-label {
+  font-family: var(--font-family);
+  font-size: 8px;
+  color: var(--color-text-muted);
+  letter-spacing: 2px;
+}
+
+.md-mode-track {
+  width: 28px;
+  height: 14px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  position: relative;
+  transition: border-color 0.15s;
+}
+
+.md-mode-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--color-accent);
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: left 0.15s;
+}
+
+.md-mode-toggle--edit .md-mode-thumb {
+  left: 14px;
+}
+
+.md-mode-label--active {
+  color: var(--color-accent);
+}
+
+:root[data-font-style="modern"] .md-mode-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Toolbar */
+.md-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: var(--spacing-xs);
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.md-toolbar-btn {
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  min-width: 26px;
+  height: 26px;
+  padding: 0 var(--spacing-xs);
+  background: none;
+  color: var(--color-text);
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+
+.md-toolbar-btn:hover {
+  border-color: var(--color-accent);
+  background-color: var(--color-background);
+  color: var(--color-accent);
+}
+
+.md-toolbar-btn:active {
+  background-color: var(--color-primary);
+}
+
+.md-tool--bold { font-weight: bold; }
+.md-tool--italic { font-style: italic; }
+.md-tool--strike { text-decoration: line-through; }
+
+.md-toolbar-divider {
+  width: 2px;
+  height: 18px;
+  background-color: var(--color-border);
+  margin: 0 var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+/* Body */
+.md-editor-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.md-editor-textarea {
+  font-family: "Courier New", monospace;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  width: 100%;
+  flex: 1;
+  min-height: max(420px, 50vh);
+  max-height: 65vh;
+  padding: var(--spacing-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 2px solid var(--color-border);
+  outline: none;
+  resize: vertical;
+  tab-size: 4;
+  white-space: pre-wrap;
+}
+
+.md-editor-textarea:focus {
+  border-color: var(--color-accent);
+}
+
+.md-editor-textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.md-editor-preview {
+  flex: 1;
+  min-height: max(420px, 50vh);
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-border);
+}
