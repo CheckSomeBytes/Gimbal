@@ -543,8 +543,8 @@ function Header() {
     }
   };
 
-  // Lab notes are written in markdown but pasted as plain text, since the
-  // target window (Slack, Zoom chat) has no markdown rendering of its own.
+  // Lab notes are written in markdown but copied as plain text, since the
+  // usual paste targets (Slack, Zoom chat) have no markdown rendering.
   const handleCopyLabNotes = async () => {
     if (!labNotesText.trim()) {
       addNotification('No notes to copy', 'error');
@@ -555,30 +555,6 @@ function Header() {
       addNotification('Lab notes copied to clipboard', 'success');
     } catch {
       addNotification('Failed to copy lab notes', 'error');
-    }
-  };
-
-  const handlePasteLabNotes = async () => {
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
-    if (!labNotesText.trim()) {
-      addNotification('No notes to send', 'error');
-      return;
-    }
-
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
-      markdownToPlainText(labNotesText),
-      windowTarget.pressEnterAfterPaste
-    );
-
-    if (!result.success) {
-      addNotification(result.error || 'Failed to send lab notes', 'error');
     }
   };
 
@@ -1130,22 +1106,13 @@ function Header() {
                 placeholder="Enter your lab notes here... Markdown is supported."
                 autoFocus
                 actions={
-                  <>
-                    <button
-                      className="btn btn--small btn--secondary"
-                      onClick={handleCopyLabNotes}
-                      title="Copy notes as plain text"
-                    >
-                      COPY
-                    </button>
-                    <button
-                      className="btn btn--small btn--secondary"
-                      onClick={handlePasteLabNotes}
-                      title="Paste notes into the target window"
-                    >
-                      SEND
-                    </button>
-                  </>
+                  <button
+                    className="btn btn--small btn--secondary"
+                    onClick={handleCopyLabNotes}
+                    title="Copy notes as plain text"
+                  >
+                    COPY
+                  </button>
                 }
               />
             </div>

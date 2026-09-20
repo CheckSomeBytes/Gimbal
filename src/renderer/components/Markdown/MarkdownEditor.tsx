@@ -47,7 +47,7 @@ const TOOLBAR: (ToolbarAction | 'divider')[] = [
 ];
 
 function MarkdownEditor({ value, onChange, placeholder, autoFocus, actions }: MarkdownEditorProps) {
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>('preview');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -228,17 +228,17 @@ function MarkdownEditor({ value, onChange, placeholder, autoFocus, actions }: Ma
         <div className="md-editor-tab-group">
           <button
             type="button"
-            className={`md-editor-tab ${mode === 'edit' ? 'md-editor-tab--active' : ''}`}
-            onClick={() => setMode('edit')}
-          >
-            EDIT
-          </button>
-          <button
-            type="button"
             className={`md-editor-tab ${mode === 'preview' ? 'md-editor-tab--active' : ''}`}
             onClick={() => setMode('preview')}
           >
             PREVIEW
+          </button>
+          <button
+            type="button"
+            className={`md-editor-tab ${mode === 'edit' ? 'md-editor-tab--active' : ''}`}
+            onClick={() => setMode('edit')}
+          >
+            EDIT
           </button>
         </div>
         {actions && <div className="md-editor-tab-actions">{actions}</div>}
