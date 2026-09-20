@@ -1,6 +1,6 @@
 {
   "name": "gimbal",
-  "version": "1.5.0-beta.2",
+  "version": "1.5.0-beta.3",
   "description": "A link and notes manager for instructors",
   "author": "CheckSomeBytes",
   "main": "out/main/main.js",
