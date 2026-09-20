@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+      # Exclude pre-release tags. The glob above matches hyphens, so a tag like
+      # v1.4.0-beta.1 triggered this workflow as well as beta-release.yml. Both
+      # then targeted the same release and raced: this one publishes without
+      # prerelease: true and uploads latest.yml, so when it won, a beta was
+      # published as Latest and went to every user on the stable channel.
+      - '!v*.*.*-*'
 
 permissions:
   contents: write
