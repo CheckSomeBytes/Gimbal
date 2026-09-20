@@ -47,7 +47,7 @@
         "portable"
       ],
       "publisherName": "CheckSomeBytes",
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "certificateFile": null,
       "certificatePassword": null
     },
