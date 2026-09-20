@@ -17,12 +17,66 @@ let countdownWindow: BrowserWindow | null = null;
 let backupTimerHandle: NodeJS.Timeout | null = null;
 let activeBackupTimerSignature: string | null = null;
 
-// Get the data directory (same folder as the app)
+// Where config is stored.
+//
+// Packaged builds use Electron's per-user userData directory. The previous
+// location was a `data` folder next to the executable, which is not writable
+// for a normal user under C:\Program Files: saveConfig() caught the EPERM and
+// returned false, so changes were lost on exit with no visible error.
+//
+// Dev keeps using the repo's data/config.json so a working tree stays
+// self-contained.
 function getDataPath(): string {
-  const appPath = app.isPackaged
-    ? join(app.getPath('exe'), '..')
-    : join(__dirname, '..', '..');
-  return join(appPath, 'data', 'config.json');
+  if (!app.isPackaged) {
+    return join(__dirname, '..', '..', 'data', 'config.json');
+  }
+  return join(app.getPath('userData'), 'config.json');
+}
+
+// Config locations used by earlier versions, newest first.
+function getLegacyDataPaths(): string[] {
+  const paths = [join(app.getPath('exe'), '..', 'data', 'config.json')];
+
+  // userData is derived from the app name, so the pre-rename build wrote to a
+  // sibling folder named after the old package name.
+  const userData = app.getPath('userData');
+  const legacyUserData = join(userData, '..', 'teacherspet', 'config.json');
+  paths.push(legacyUserData);
+
+  return paths;
+}
+
+// One-time migration: if the current location has no config but an older one
+// does, copy it across. Copies rather than moves, so the original stays as a
+// fallback if anything goes wrong.
+function migrateConfigIfNeeded(): void {
+  if (!app.isPackaged) return;
+
+  const target = getDataPath();
+  if (existsSync(target)) return;
+
+  for (const source of getLegacyDataPaths()) {
+    try {
+      if (!existsSync(source)) continue;
+
+      // Only accept a file that parses and looks like our config.
+      const raw = readFileSync(source, 'utf-8');
+      const parsed = JSON.parse(raw) as AppConfig;
+      if (!parsed || !Array.isArray(parsed.profiles)) {
+        console.warn(`[Migrate] Skipping ${source}: not a recognisable config`);
+        continue;
+      }
+
+      mkdirSync(join(target, '..'), { recursive: true });
+      writeFileSync(target, raw);
+      console.log(`[Migrate] Imported config from ${source} -> ${target}`);
+      return;
+    } catch (error) {
+      console.error(`[Migrate] Could not import ${source}:`, error);
+    }
+  }
+
+  console.log('[Migrate] No previous config found; starting fresh');
 }
 
 // Load configuration from disk
@@ -345,6 +399,9 @@ function createWindow(): void {
     height: 600,
     minWidth: 400,
     minHeight: 300,
+    // The window is frameless, so this shows in the taskbar and alt-tab.
+    // Set here as well as in index.html so it is correct before the page loads.
+    title: 'Gimbal — Stay the Course',
     frame: false,
     backgroundColor: '#1a1a2e',
     autoHideMenuBar: true,
@@ -372,9 +429,19 @@ function createWindow(): void {
 // BACKUP FUNCTIONS
 // ============================================================================
 
-// Get the default backup directory
+// Get the default backup directory.
+// New installs use gimbal-backups. If a folder from the previous name exists
+// and the new one does not, keep using it so existing backups stay visible in
+// the restore list rather than being silently orphaned.
 function getDefaultBackupDirectory(): string {
-  return join(app.getPath('documents'), 'teachers-pet-backups');
+  const documents = app.getPath('documents');
+  const current = join(documents, 'gimbal-backups');
+  const legacy = join(documents, 'teachers-pet-backups');
+
+  if (!existsSync(current) && existsSync(legacy)) {
+    return legacy;
+  }
+  return current;
 }
 
 // Calculate SHA256 hash of config for change detection
@@ -661,7 +728,7 @@ function setupIPC(): void {
   ipcMain.handle(IPC_CHANNELS.EXPORT_CONFIG, async () => {
     const result = await dialog.showSaveDialog({
       title: 'Export Configuration',
-      defaultPath: 'teacherspet-export.json',
+      defaultPath: 'gimbal-export.json',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
 
@@ -1217,7 +1284,7 @@ if (app.isPackaged) {
   autoUpdater.setFeedURL({
     provider: 'github',
     owner: 'CheckSomeBytes',
-    repo: 'TeachersPet',
+    repo: 'Gimbal',
   });
 }
 
@@ -1257,6 +1324,10 @@ autoUpdater.on('update-downloaded', (info) => {
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Must run before anything reads config, including the renderer's first
+  // config:load over IPC.
+  migrateConfigIfNeeded();
+
   setupIPC();
   createWindow();
 

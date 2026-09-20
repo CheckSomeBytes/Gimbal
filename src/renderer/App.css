@@ -13,6 +13,20 @@
   gap: var(--spacing-lg);
 }
 
+.loading-brand {
+  font-size: calc(var(--font-size-lg) * 2);
+  color: var(--color-primary);
+  letter-spacing: 0.15em;
+}
+
+.loading-tagline {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  /* Pull up under the wordmark; the flex container's gap is sized for the
+     loading bar, which is too much space for a tagline. */
+  margin-top: calc(var(--spacing-lg) * -1 + var(--spacing-xs));
+}
+
 .loading-text {
   font-size: var(--font-size-lg);
   color: var(--color-accent);

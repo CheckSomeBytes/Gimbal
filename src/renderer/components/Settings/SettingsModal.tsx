@@ -1911,7 +1911,7 @@ function SettingsModal() {
               )}
 
               <p className="settings-help">
-                TeachersPet automatically checks for updates on startup. Updates are published to GitHub Releases
+                Gimbal automatically checks for updates on startup. Updates are published to GitHub Releases
                 and include bug fixes, new features, and improvements.
               </p>
 

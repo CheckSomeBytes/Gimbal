@@ -58,6 +58,8 @@ function App() {
   if (isLoading) {
     return (
       <div className="loading-screen">
+        <div className="loading-brand">GIMBAL</div>
+        <div className="loading-tagline">Stay the Course</div>
         <div className="loading-text">LOADING...</div>
         <div className="loading-bar">
           <div className="loading-bar-fill"></div>
