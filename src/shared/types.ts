@@ -65,6 +65,7 @@ export interface Settings {
   lastLaunchDate?: string; // ISO date string of last launch
   timerFontFamily?: string; // Font family for countdown timer (falls back to theme.fontFamily)
   labNotes?: Record<string, string>; // Lab notes keyed by lab number (e.g., "4.1")
+  todos?: Todo[]; // Instructor todo list (per profile)
   backupSettings?: BackupSettings;
   includeBetaUpdates?: boolean; // Whether to include beta releases in update checks (default false)
 }
@@ -155,6 +156,14 @@ export interface Note {
   title: string;
   content: string;
   order: number;
+}
+
+export interface Todo {
+  id: string;
+  text: string;
+  done: boolean;
+  order: number;
+  createdAt: string;
 }
 
 export interface Poll {

@@ -8,6 +8,7 @@ import {
   Link,
   Note,
   Poll,
+  Todo,
   Settings,
   ScheduledTime,
   DEFAULT_CONFIG,
@@ -74,6 +75,13 @@ interface AppState {
   unassignLabFromSection: (dayId: string, sectionId: string) => void;
   updateLabNotes: (labNumber: string, notes: string) => void;
 
+  // Todo operations
+  addTodo: (text: string) => void;
+  toggleTodo: (todoId: string) => void;
+  updateTodo: (todoId: string, text: string) => void;
+  deleteTodo: (todoId: string) => void;
+  clearAllTodos: () => void;
+
   // Day navigation
   goToPreviousDay: () => void;
   goToNextDay: () => void;
@@ -135,6 +143,21 @@ interface AppState {
   setSettingsTab: (tab: string) => void;
   openLabNotesLabNumber: string | null;
   setOpenLabNotesLabNumber: (labNumber: string | null) => void;
+  isTodoPopupOpen: boolean;
+  setTodoPopupOpen: (open: boolean) => void;
+}
+
+/** Applies an update to the active profile's settings, leaving other profiles untouched. */
+function updateCurrentProfileSettings(
+  config: AppConfig,
+  updater: (settings: Settings) => Settings
+): AppConfig {
+  return {
+    ...config,
+    profiles: config.profiles.map((p) =>
+      p.id === config.currentProfileId ? { ...p, settings: updater(p.settings) } : p
+    ),
+  };
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -152,6 +175,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   _configLoadStarted: false,
   settingsTab: 'profiles',
   openLabNotesLabNumber: null,
+  isTodoPopupOpen: false,
 
   loadConfig: async () => {
     if (get()._configLoadStarted) return; // Prevent duplicate calls (e.g., React StrictMode)
@@ -628,6 +652,78 @@ export const useAppStore = create<AppState>((set, get) => ({
             : p
         ),
       },
+    }));
+    get().saveConfig();
+  },
+
+  addTodo: (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    set((state) => ({
+      config: updateCurrentProfileSettings(state.config, (settings) => {
+        const todos = settings.todos || [];
+        return {
+          ...settings,
+          todos: [
+            ...todos,
+            {
+              id: uuidv4(),
+              text: trimmed,
+              done: false,
+              order: todos.length,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        };
+      }),
+    }));
+    get().saveConfig();
+  },
+
+  toggleTodo: (todoId) => {
+    set((state) => ({
+      config: updateCurrentProfileSettings(state.config, (settings) => ({
+        ...settings,
+        todos: (settings.todos || []).map((t) =>
+          t.id === todoId ? { ...t, done: !t.done } : t
+        ),
+      })),
+    }));
+    get().saveConfig();
+  },
+
+  updateTodo: (todoId, text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    set((state) => ({
+      config: updateCurrentProfileSettings(state.config, (settings) => ({
+        ...settings,
+        todos: (settings.todos || []).map((t) =>
+          t.id === todoId ? { ...t, text: trimmed } : t
+        ),
+      })),
+    }));
+    get().saveConfig();
+  },
+
+  deleteTodo: (todoId) => {
+    set((state) => ({
+      config: updateCurrentProfileSettings(state.config, (settings) => ({
+        ...settings,
+        todos: (settings.todos || [])
+          .filter((t) => t.id !== todoId)
+          .map((t, i) => ({ ...t, order: i })),
+      })),
+    }));
+    get().saveConfig();
+  },
+
+  clearAllTodos: () => {
+    set((state) => ({
+      config: updateCurrentProfileSettings(state.config, (settings) => ({
+        ...settings,
+        todos: [],
+      })),
     }));
     get().saveConfig();
   },
@@ -1629,6 +1725,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openSettingsToTab: (tab) => {
     set({ isSettingsOpen: true, settingsTab: tab });
+  },
+
+  setTodoPopupOpen: (open) => {
+    set({ isTodoPopupOpen: open });
   },
 
   setOpenLabNotesLabNumber: (labNumber) => {

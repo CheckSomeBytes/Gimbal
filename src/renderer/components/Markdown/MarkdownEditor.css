@@ -1,0 +1,148 @@
+/* Markdown editor chrome. Theme-variable driven so it tracks every theme. */
+
+.md-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: var(--spacing-sm);
+}
+
+/* Tab strip */
+.md-editor-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.md-editor-tab-group {
+  display: flex;
+  gap: 0;
+}
+
+.md-editor-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.md-editor-tab {
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background-color: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.1s;
+}
+
+.md-editor-tab + .md-editor-tab {
+  border-left: none;
+}
+
+.md-editor-tab:hover {
+  color: var(--color-text);
+}
+
+.md-editor-tab--active {
+  background-color: var(--color-primary);
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+
+/* Toolbar */
+.md-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: var(--spacing-xs);
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.md-toolbar-btn {
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  min-width: 26px;
+  height: 26px;
+  padding: 0 var(--spacing-xs);
+  background: none;
+  color: var(--color-text);
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+
+.md-toolbar-btn:hover {
+  border-color: var(--color-accent);
+  background-color: var(--color-background);
+  color: var(--color-accent);
+}
+
+.md-toolbar-btn:active {
+  background-color: var(--color-primary);
+}
+
+.md-tool--bold { font-weight: bold; }
+.md-tool--italic { font-style: italic; }
+.md-tool--strike { text-decoration: line-through; }
+
+.md-toolbar-divider {
+  width: 2px;
+  height: 18px;
+  background-color: var(--color-border);
+  margin: 0 var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+/* Body */
+.md-editor-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.md-editor-textarea {
+  font-family: "Courier New", monospace;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  width: 100%;
+  flex: 1;
+  min-height: 260px;
+  padding: var(--spacing-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 2px solid var(--color-border);
+  outline: none;
+  resize: vertical;
+  tab-size: 4;
+  white-space: pre-wrap;
+}
+
+.md-editor-textarea:focus {
+  border-color: var(--color-accent);
+}
+
+.md-editor-textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.md-editor-preview {
+  flex: 1;
+  min-height: 260px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-border);
+}

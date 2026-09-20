@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { TIMEZONES, ScheduledTime, Link, Note } from '../../../shared/types';
+import TodoPopup from '../Todo/TodoPopup';
+import MarkdownEditor from '../Markdown/MarkdownEditor';
+import { markdownToPlainText } from '../Markdown/markdown';
 import iconBrowser from '../../assets/icon-browser.png';
 import iconSlack from '../../assets/icon-slack.png';
 import './Header.css';
@@ -149,6 +152,7 @@ function Header() {
     openLabNotesLabNumber,
     setOpenLabNotesLabNumber,
     updateLabNotes,
+    setTodoPopupOpen,
     addPoll,
   } = useAppStore();
 
@@ -197,6 +201,7 @@ function Header() {
   const timezone = currentProfile.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const scheduledTimes = currentProfile.settings.scheduledTimes || [];
   const breakAlertMinutes = currentProfile.settings.breakAlertMinutes || 5;
+  const openTodoCount = (currentProfile.settings.todos || []).filter((t) => !t.done).length;
 
   // Detect if using modern font
   const fontFamily = currentProfile.settings.theme.fontFamily;
@@ -535,6 +540,45 @@ function Header() {
       setLabNumber('');
     } else {
       addNotification(result.error || 'Failed to send lab poll', 'error');
+    }
+  };
+
+  // Lab notes are written in markdown but pasted as plain text, since the
+  // target window (Slack, Zoom chat) has no markdown rendering of its own.
+  const handleCopyLabNotes = async () => {
+    if (!labNotesText.trim()) {
+      addNotification('No notes to copy', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(markdownToPlainText(labNotesText));
+      addNotification('Lab notes copied to clipboard', 'success');
+    } catch {
+      addNotification('Failed to copy lab notes', 'error');
+    }
+  };
+
+  const handlePasteLabNotes = async () => {
+    const { windowTarget } = currentProfile.settings;
+
+    if (!windowTarget.pattern) {
+      addNotification('No window pattern configured. Go to Settings.', 'error');
+      return;
+    }
+    if (!labNotesText.trim()) {
+      addNotification('No notes to send', 'error');
+      return;
+    }
+
+    const result = await window.electronAPI.focusAndPaste(
+      windowTarget.pattern,
+      windowTarget.matchMode,
+      markdownToPlainText(labNotesText),
+      windowTarget.pressEnterAfterPaste
+    );
+
+    if (!result.success) {
+      addNotification(result.error || 'Failed to send lab notes', 'error');
     }
   };
 
@@ -1008,6 +1052,16 @@ function Header() {
         >
           ⏱
         </button>
+        <button
+          className="header-todo-btn btn btn--small"
+          onClick={() => setTodoPopupOpen(true)}
+          title={openTodoCount > 0 ? `Todo (${openTodoCount} open)` : 'Todo'}
+        >
+          ✓
+          {openTodoCount > 0 && (
+            <span className="todo-badge">{openTodoCount > 99 ? '99+' : openTodoCount}</span>
+          )}
+        </button>
       </div>
 
       {/* Lab Bar */}
@@ -1042,10 +1096,12 @@ function Header() {
         </div>
       )}
 
+      <TodoPopup />
+
       {/* Lab Notes Popup */}
       {openLabNotesLabNumber && (
         <div className="lab-popup-overlay lab-popup-overlay--top-anchored" onClick={() => setOpenLabNotesLabNumber(null)}>
-          <div className="lab-popup" onClick={(e) => e.stopPropagation()}>
+          <div className="lab-popup lab-popup--notes" onClick={(e) => e.stopPropagation()}>
             <div className="lab-popup-header">
               <span className="lab-popup-title">Lab {openLabNotesLabNumber} Notes</span>
               <div className="lab-popup-header-right">
@@ -1065,30 +1121,32 @@ function Header() {
               </div>
             </div>
             <div className="lab-popup-content">
-              <textarea
-                className="textarea"
-                style={{ width: '100%', minHeight: '150px', resize: 'vertical' }}
-                placeholder="Enter your lab notes here..."
+              <MarkdownEditor
                 value={labNotesText}
-                onChange={(e) => {
-                  setLabNotesText(e.target.value);
-                  updateLabNotes(openLabNotesLabNumber, e.target.value);
+                onChange={(next) => {
+                  setLabNotesText(next);
+                  updateLabNotes(openLabNotesLabNumber, next);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const target = e.target as HTMLTextAreaElement;
-                    const start = target.selectionStart;
-                    const end = target.selectionEnd;
-                    const newValue = labNotesText.substring(0, start) + '\t' + labNotesText.substring(end);
-                    setLabNotesText(newValue);
-                    updateLabNotes(openLabNotesLabNumber, newValue);
-                    setTimeout(() => {
-                      target.selectionStart = target.selectionEnd = start + 1;
-                    }, 0);
-                  }
-                }}
+                placeholder="Enter your lab notes here... Markdown is supported."
                 autoFocus
+                actions={
+                  <>
+                    <button
+                      className="btn btn--small btn--secondary"
+                      onClick={handleCopyLabNotes}
+                      title="Copy notes as plain text"
+                    >
+                      COPY
+                    </button>
+                    <button
+                      className="btn btn--small btn--secondary"
+                      onClick={handlePasteLabNotes}
+                      title="Paste notes into the target window"
+                    >
+                      SEND
+                    </button>
+                  </>
+                }
               />
             </div>
           </div>
