@@ -5,6 +5,109 @@ import iconBrowser from '../../assets/icon-browser.png';
 import iconSlack from '../../assets/icon-slack.png';
 import './Header.css';
 
+// Common Slack emoji codes for the quick poll emoji picker
+const COMMON_SLACK_EMOJIS: { code: string; unicode: string }[] = [
+  // Yes / No / Status
+  { code: ':white_check_mark:', unicode: '✅' },
+  { code: ':x:', unicode: '❌' },
+  { code: ':thumbsup:', unicode: '👍' },
+  { code: ':thumbsdown:', unicode: '👎' },
+  { code: ':heavy_check_mark:', unicode: '✔️' },
+  { code: ':no_entry_sign:', unicode: '🚫' },
+  // Reactions
+  { code: ':heart:', unicode: '❤️' },
+  { code: ':star:', unicode: '⭐' },
+  { code: ':fire:', unicode: '🔥' },
+  { code: ':100:', unicode: '💯' },
+  { code: ':tada:', unicode: '🎉' },
+  { code: ':clap:', unicode: '👏' },
+  { code: ':raised_hands:', unicode: '🙌' },
+  { code: ':muscle:', unicode: '💪' },
+  { code: ':pray:', unicode: '🙏' },
+  // Faces
+  { code: ':smile:', unicode: '😄' },
+  { code: ':laughing:', unicode: '😆' },
+  { code: ':thinking_face:', unicode: '🤔' },
+  { code: ':neutral_face:', unicode: '😐' },
+  { code: ':confused:', unicode: '😕' },
+  { code: ':disappointed:', unicode: '😞' },
+  { code: ':scream:', unicode: '😱' },
+  { code: ':sleeping:', unicode: '😴' },
+  { code: ':nerd_face:', unicode: '🤓' },
+  { code: ':sunglasses:', unicode: '😎' },
+  { code: ':partying_face:', unicode: '🥳' },
+  { code: ':shrug:', unicode: '🤷' },
+  // Objects / Symbols
+  { code: ':bulb:', unicode: '💡' },
+  { code: ':rocket:', unicode: '🚀' },
+  { code: ':eyes:', unicode: '👀' },
+  { code: ':warning:', unicode: '⚠️' },
+  { code: ':question:', unicode: '❓' },
+  { code: ':exclamation:', unicode: '❗' },
+  { code: ':mega:', unicode: '📣' },
+  { code: ':trophy:', unicode: '🏆' },
+  { code: ':dart:', unicode: '🎯' },
+  { code: ':books:', unicode: '📚' },
+  { code: ':pencil:', unicode: '✏️' },
+  { code: ':wrench:', unicode: '🔧' },
+  { code: ':hammer:', unicode: '🔨' },
+  { code: ':lock:', unicode: '🔒' },
+  { code: ':key:', unicode: '🔑' },
+  { code: ':gear:', unicode: '⚙️' },
+  { code: ':hourglass:', unicode: '⏳' },
+  { code: ':stopwatch:', unicode: '⏱️' },
+  { code: ':calendar:', unicode: '📅' },
+  { code: ':clipboard:', unicode: '📋' },
+  { code: ':bar_chart:', unicode: '📊' },
+  { code: ':chart_with_upwards_trend:', unicode: '📈' },
+  { code: ':link:', unicode: '🔗' },
+  { code: ':computer:', unicode: '💻' },
+  { code: ':bug:', unicode: '🐛' },
+  { code: ':shield:', unicode: '🛡️' },
+  // Hands / Gestures
+  { code: ':point_up:', unicode: '☝️' },
+  { code: ':point_right:', unicode: '👉' },
+  { code: ':point_down:', unicode: '👇' },
+  { code: ':point_left:', unicode: '👈' },
+  { code: ':wave:', unicode: '👋' },
+  { code: ':ok_hand:', unicode: '👌' },
+  { code: ':v:', unicode: '✌️' },
+  // Math / Arrows
+  { code: ':heavy_plus_sign:', unicode: '➕' },
+  { code: ':heavy_minus_sign:', unicode: '➖' },
+  { code: ':arrow_up:', unicode: '⬆️' },
+  { code: ':arrow_down:', unicode: '⬇️' },
+  { code: ':arrow_left:', unicode: '⬅️' },
+  { code: ':arrow_right:', unicode: '➡️' },
+  // Numbers / Letters
+  { code: ':one:', unicode: '1️⃣' },
+  { code: ':two:', unicode: '2️⃣' },
+  { code: ':three:', unicode: '3️⃣' },
+  { code: ':four:', unicode: '4️⃣' },
+  { code: ':five:', unicode: '5️⃣' },
+  { code: ':six:', unicode: '6️⃣' },
+  { code: ':seven:', unicode: '7️⃣' },
+  { code: ':eight:', unicode: '8️⃣' },
+  { code: ':nine:', unicode: '9️⃣' },
+  { code: ':keycap_ten:', unicode: '🔟' },
+  { code: ':a:', unicode: '🅰️' },
+  { code: ':b:', unicode: '🅱️' },
+  { code: ':o:', unicode: '⭕' },
+  // Colors / Shapes
+  { code: ':red_circle:', unicode: '🔴' },
+  { code: ':large_blue_circle:', unicode: '🔵' },
+  { code: ':white_circle:', unicode: '⚪' },
+  { code: ':black_circle:', unicode: '⚫' },
+  { code: ':green_heart:', unicode: '💚' },
+  { code: ':blue_heart:', unicode: '💙' },
+  { code: ':purple_heart:', unicode: '💜' },
+  { code: ':yellow_heart:', unicode: '💛' },
+  { code: ':large_green_square:', unicode: '🟩' },
+  { code: ':large_red_square:', unicode: '🟥' },
+  { code: ':large_blue_square:', unicode: '🟦' },
+  { code: ':large_yellow_square:', unicode: '🟨' },
+];
+
 // Search result interface
 interface SearchResult {
   type: 'link' | 'note';
@@ -46,6 +149,7 @@ function Header() {
     openLabNotesLabNumber,
     setOpenLabNotesLabNumber,
     updateLabNotes,
+    addPoll,
   } = useAppStore();
 
   const currentProfile = getCurrentProfile();
@@ -75,6 +179,21 @@ function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
+  // Quick Poll popup state
+  const [showQuickPollPopup, setShowQuickPollPopup] = useState(false);
+  const [quickPollQuestion, setQuickPollQuestion] = useState('');
+  const [quickPollOptions, setQuickPollOptions] = useState<{ emoji: string; text: string }[]>([
+    { emoji: '', text: '' },
+    { emoji: '', text: '' },
+  ]);
+  const [quickPollAnonymous, setQuickPollAnonymous] = useState(true);
+  const [showQuickPollSaveDropdown, setShowQuickPollSaveDropdown] = useState(false);
+  const [quickPollSaveTitle, setQuickPollSaveTitle] = useState('');
+  const [quickPollSaveDayId, setQuickPollSaveDayId] = useState('');
+  const [quickPollSaveSectionId, setQuickPollSaveSectionId] = useState('');
+  const [quickPollEmojiPickerIndex, setQuickPollEmojiPickerIndex] = useState<number | null>(null);
+  const [quickPollCustomEmoji, setQuickPollCustomEmoji] = useState('');
+
   const timezone = currentProfile.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const scheduledTimes = currentProfile.settings.scheduledTimes || [];
   const breakAlertMinutes = currentProfile.settings.breakAlertMinutes || 5;
@@ -98,6 +217,31 @@ function Header() {
       setLabNotesText(currentProfile.settings.labNotes?.[openLabNotesLabNumber] || '');
     }
   }, [openLabNotesLabNumber]);
+
+  const openSearchPopup = useCallback(() => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchPopup(true);
+  }, []);
+
+  // Global shortcuts: Ctrl/Cmd+K opens search, Ctrl/Cmd+S opens settings.
+  // Both were documented in the README but never implemented.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
+        e.preventDefault();
+        openSearchPopup();
+      } else if (key === 's') {
+        // Prevent the browser "save page" dialog in dev.
+        e.preventDefault();
+        openSettingsToTab('general');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [openSearchPopup, openSettingsToTab]);
 
   // Get current time in the selected timezone
   const getCurrentTimeInTimezone = () => {
@@ -290,6 +434,7 @@ function Header() {
       success: theme.colors.success,
       danger: theme.colors.danger,
       fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
+      border: theme.colors.border,
     });
     addNotification('Countdown timer opened!', 'success');
   };
@@ -331,6 +476,7 @@ function Header() {
         success: theme.colors.success,
         danger: theme.colors.danger,
         fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
+        border: theme.colors.border,
       });
 
       addNotification('Time estimate sent and timer opened!', 'success');
@@ -356,6 +502,7 @@ function Header() {
       success: theme.colors.success,
       danger: theme.colors.danger,
       fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
+      border: theme.colors.border,
     });
     addNotification('Countdown timer opened!', 'success');
     setShowTimeEstimatePopup(false);
@@ -572,6 +719,81 @@ function Header() {
     }
   };
 
+  // Quick Poll helpers
+  const generateQuickPollText = () => {
+    const question = quickPollQuestion.trim() || 'Your question here';
+    const validOptions = quickPollOptions.filter((o) => o.text.trim());
+    const optionStrings = validOptions.map((o) => {
+      const emoji = o.emoji.trim();
+      return emoji ? `"${o.text.trim()}"${emoji}` : `"${o.text.trim()}"`;
+    });
+    const flags: string[] = [];
+    if (quickPollAnonymous) flags.push('anonymous');
+    const flagStr = flags.length > 0 ? ' ' + flags.join(' ') : '';
+    return `/poll "${question}" ${optionStrings.join(' ')}${flagStr}`;
+  };
+
+  const handleAddPollOption = () => {
+    if (quickPollOptions.length >= 10) {
+      addNotification('Maximum 10 options allowed', 'error');
+      return;
+    }
+    setQuickPollOptions([...quickPollOptions, { emoji: '', text: '' }]);
+  };
+
+  const handleRemovePollOption = (index: number) => {
+    setQuickPollOptions(quickPollOptions.filter((_, i) => i !== index));
+  };
+
+  const handleSendQuickPoll = async () => {
+    if (!quickPollQuestion.trim()) {
+      addNotification('Please enter a question', 'error');
+      return;
+    }
+    const validOptions = quickPollOptions.filter((o) => o.text.trim());
+    if (validOptions.length < 2) {
+      addNotification('Please fill in at least 2 options', 'error');
+      return;
+    }
+    const { windowTarget } = currentProfile.settings;
+    if (!windowTarget.pattern) {
+      addNotification('No window pattern configured. Go to Settings.', 'error');
+      return;
+    }
+    const pollText = generateQuickPollText();
+    const result = await window.electronAPI.focusAndPaste(
+      windowTarget.pattern,
+      windowTarget.matchMode,
+      pollText
+    );
+    if (result.success) {
+      addNotification('Quick poll sent!', 'success');
+      setShowQuickPollPopup(false);
+    } else {
+      addNotification(result.error || 'Failed to send quick poll', 'error');
+    }
+  };
+
+  const handleSaveQuickPoll = () => {
+    if (!quickPollQuestion.trim()) {
+      addNotification('Please enter a question', 'error');
+      return;
+    }
+    const validOptions = quickPollOptions.filter((o) => o.text.trim());
+    if (validOptions.length < 2) {
+      addNotification('Please fill in at least 2 options', 'error');
+      return;
+    }
+    if (!quickPollSaveDayId || !quickPollSaveSectionId) {
+      addNotification('Please select a day and section to save to', 'error');
+      return;
+    }
+    const title = quickPollSaveTitle.trim() || quickPollQuestion.trim();
+    addPoll(quickPollSaveDayId, quickPollSaveSectionId, title, generateQuickPollText());
+    addNotification('Poll saved to section!', 'success');
+  };
+
+
   return (
     <>
     <header className="header">
@@ -747,13 +969,29 @@ function Header() {
         )}
 
         <button
-          className="header-search-btn btn btn--small"
+          className="header-poll-btn btn btn--small"
           onClick={() => {
-            setShowSearchPopup(true);
-            setSearchQuery('');
-            setSearchResults([]);
+            setQuickPollQuestion('');
+            setQuickPollOptions([
+              { emoji: ':white_check_mark:', text: '' },
+              { emoji: ':x:', text: '' },
+            ]);
+            setQuickPollAnonymous(true);
+            setQuickPollSaveDayId(selectedDayId || '');
+            setQuickPollSaveSectionId(currentDay?.sections[0]?.id || '');
+            setShowQuickPollSaveDropdown(false);
+            setQuickPollEmojiPickerIndex(null);
+            setQuickPollCustomEmoji('');
+            setShowQuickPollPopup(true);
           }}
-          title="Search links and notes"
+          title="Quick Poll"
+        >
+          📊
+        </button>
+        <button
+          className="header-search-btn btn btn--small"
+          onClick={openSearchPopup}
+          title="Search links and notes (Ctrl+K)"
         >
           🔍
         </button>
@@ -1012,6 +1250,244 @@ function Header() {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Poll Popup */}
+      {showQuickPollPopup && (
+        <div className="lab-popup-overlay" onClick={() => setShowQuickPollPopup(false)}>
+          <div className="lab-popup quick-poll-popup" onClick={(e) => { e.stopPropagation(); setQuickPollEmojiPickerIndex(null); }}>
+            <div className="lab-popup-header">
+              <span className="lab-popup-title">QUICK POLL</span>
+              <button
+                className="btn btn--small btn--danger"
+                onClick={() => setShowQuickPollPopup(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="lab-popup-content">
+              <div className="quick-poll-field">
+                <label className="lab-popup-label">QUESTION</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Enter your poll question..."
+                  value={quickPollQuestion}
+                  onChange={(e) => setQuickPollQuestion(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="quick-poll-field">
+                <label className="lab-popup-label">ANSWERS</label>
+                {quickPollOptions.map((option, index) => (
+                  <div key={index} className="quick-poll-option-row">
+                    <div className="quick-poll-emoji-wrapper">
+                      <button
+                        className="quick-poll-emoji-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (quickPollEmojiPickerIndex === index) {
+                            setQuickPollEmojiPickerIndex(null);
+                            setQuickPollCustomEmoji('');
+                          } else {
+                            setQuickPollEmojiPickerIndex(index);
+                            setQuickPollCustomEmoji('');
+                          }
+                        }}
+                        title={option.emoji || 'Select emoji'}
+                      >
+                        {option.emoji || 'emoji'}
+                      </button>
+                      {quickPollEmojiPickerIndex === index && (
+                        <div className="quick-poll-emoji-picker" onClick={(e) => e.stopPropagation()}>
+                          <div className="quick-poll-emoji-grid">
+                            {COMMON_SLACK_EMOJIS.map((emoji) => (
+                              <button
+                                key={emoji.code}
+                                className={`quick-poll-emoji-grid-btn ${option.emoji === emoji.code ? 'quick-poll-emoji-grid-btn--active' : ''}`}
+                                onClick={() => {
+                                  const updated = [...quickPollOptions];
+                                  updated[index] = { ...updated[index], emoji: emoji.code };
+                                  setQuickPollOptions(updated);
+                                  setQuickPollEmojiPickerIndex(null);
+                                  setQuickPollCustomEmoji('');
+                                }}
+                                title={emoji.code}
+                              >
+                                {emoji.unicode}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="quick-poll-emoji-custom">
+                            <input
+                              type="text"
+                              className="input quick-poll-emoji-custom-input"
+                              placeholder=":custom_emoji:"
+                              value={quickPollCustomEmoji}
+                              onChange={(e) => setQuickPollCustomEmoji(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && quickPollCustomEmoji.trim()) {
+                                  const updated = [...quickPollOptions];
+                                  updated[index] = { ...updated[index], emoji: quickPollCustomEmoji.trim() };
+                                  setQuickPollOptions(updated);
+                                  setQuickPollEmojiPickerIndex(null);
+                                  setQuickPollCustomEmoji('');
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <button
+                              className="btn btn--small btn--accent"
+                              onClick={() => {
+                                if (quickPollCustomEmoji.trim()) {
+                                  const updated = [...quickPollOptions];
+                                  updated[index] = { ...updated[index], emoji: quickPollCustomEmoji.trim() };
+                                  setQuickPollOptions(updated);
+                                  setQuickPollEmojiPickerIndex(null);
+                                  setQuickPollCustomEmoji('');
+                                }
+                              }}
+                            >
+                              APPLY
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      className="input quick-poll-text-input"
+                      placeholder={`Option ${index + 1}`}
+                      value={option.text}
+                      onChange={(e) => {
+                        const updated = [...quickPollOptions];
+                        updated[index] = { ...updated[index], text: e.target.value };
+                        setQuickPollOptions(updated);
+                      }}
+                    />
+                    {quickPollOptions.length > 2 && (
+                      <button
+                        className="btn btn--small btn--danger quick-poll-remove-btn"
+                        onClick={() => handleRemovePollOption(index)}
+                        title="Remove option"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  className="btn btn--small quick-poll-add-btn"
+                  onClick={handleAddPollOption}
+                >
+                  + ADD OPTION
+                </button>
+              </div>
+              <div className="quick-poll-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={quickPollAnonymous}
+                    onChange={(e) => setQuickPollAnonymous(e.target.checked)}
+                  />
+                  <span className="quick-poll-toggle-label">ANONYMOUS</span>
+                </label>
+              </div>
+              <div className="lab-popup-preview">
+                <label className="lab-popup-label">PREVIEW</label>
+                <div className="lab-popup-preview-text">
+                  {generateQuickPollText()}
+                </div>
+              </div>
+            </div>
+            <div className="lab-popup-actions quick-poll-buttons-row">
+              <div className="quick-poll-save-wrapper">
+                <button
+                  className="btn btn--accent btn--full-width"
+                  onClick={() => {
+                    if (!showQuickPollSaveDropdown) {
+                      setQuickPollSaveTitle(quickPollQuestion.trim());
+                    }
+                    setShowQuickPollSaveDropdown(!showQuickPollSaveDropdown);
+                  }}
+                  title="Save poll to section"
+                >
+                  SAVE
+                </button>
+                {showQuickPollSaveDropdown && (
+                  <div className="quick-poll-save-dropdown">
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Poll title..."
+                      value={quickPollSaveTitle}
+                      onChange={(e) => setQuickPollSaveTitle(e.target.value)}
+                    />
+                    <select
+                      className="input quick-poll-section-select"
+                      value={quickPollSaveDayId}
+                      onChange={(e) => {
+                        setQuickPollSaveDayId(e.target.value);
+                        const day = currentProfile.days.find((d) => d.id === e.target.value);
+                        setQuickPollSaveSectionId(day?.sections[0]?.id || '');
+                      }}
+                    >
+                      {sortedDays.map((day) => (
+                        <option key={day.id} value={day.id}>
+                          {day.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="input quick-poll-section-select"
+                      value={quickPollSaveSectionId}
+                      onChange={(e) => setQuickPollSaveSectionId(e.target.value)}
+                    >
+                      {(currentProfile.days.find((d) => d.id === quickPollSaveDayId)?.sections || []).map((section) => (
+                        <option key={section.id} value={section.id}>
+                          {section.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="quick-poll-save-preview">
+                      {generateQuickPollText()}
+                    </div>
+                    <button
+                      className="btn btn--accent btn--full-width"
+                      onClick={() => {
+                        handleSaveQuickPoll();
+                        setShowQuickPollSaveDropdown(false);
+                      }}
+                      disabled={!quickPollSaveSectionId}
+                    >
+                      CONFIRM SAVE
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                className="btn btn--success btn--half-width"
+                onClick={handleSendQuickPoll}
+              >
+                SEND TO SLACK
+              </button>
+              <button
+                className="btn btn--primary btn--half-width"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(generateQuickPollText());
+                    addNotification('Poll command copied to clipboard!', 'success');
+                  } catch {
+                    addNotification('Failed to copy', 'error');
+                  }
+                }}
+                title="Copy poll command to clipboard"
+              >
+                COPY
+              </button>
             </div>
           </div>
         </div>

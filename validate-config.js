@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 
 console.log('='.repeat(60));
-console.log('  TeachersPet Auto-Update Configuration Validator');
+console.log('  Gimbal Auto-Update Configuration Validator');
 console.log('='.repeat(60));
 console.log('');
 
@@ -49,14 +49,14 @@ if (portableArtifactName) {
   const portableFilename = expandTemplate(portableArtifactName, buildConfig.productName, version, 'exe');
   console.log(`  ✅ Portable: ${portableFilename}`);
 } else {
-  console.log(`  ⚠️  Portable: TeachersPet.${version}.exe (default - uses dots)`);
+  console.log(`  ⚠️  Portable: Gimbal.${version}.exe (default - uses dots)`);
 }
 
 if (nsisArtifactName) {
   const nsisFilename = expandTemplate(nsisArtifactName, buildConfig.productName, version, 'exe');
   console.log(`  ✅ NSIS Installer: ${nsisFilename}`);
 } else {
-  console.log(`  ⚠️  NSIS Installer: TeachersPet.Setup.${version}.exe (default - uses dots)`);
+  console.log(`  ⚠️  NSIS Installer: Gimbal.Setup.${version}.exe (default - uses dots)`);
 }
 
 console.log('');

@@ -275,6 +275,57 @@ input.settings-day-lab-input.input {
   width: 120px;
 }
 
+/* Window target preflight test */
+.settings-target-test {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  align-items: flex-start;
+}
+
+.settings-target-test-result {
+  display: flex;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 2px solid var(--color-border);
+  background: var(--color-background);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.settings-target-test-result--ok {
+  border-color: var(--color-success);
+}
+
+.settings-target-test-result--fail {
+  border-color: var(--color-danger);
+}
+
+.settings-target-test-icon {
+  flex-shrink: 0;
+}
+
+.settings-target-test-result--ok .settings-target-test-icon {
+  color: var(--color-success);
+}
+
+.settings-target-test-result--fail .settings-target-test-icon {
+  color: var(--color-danger);
+}
+
+.settings-target-test-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-target-test-matches {
+  margin: var(--spacing-xs) 0 0;
+  padding-left: var(--spacing-md);
+  color: var(--color-text-muted);
+}
+
 .settings-label-row {
   display: flex;
   align-items: center;

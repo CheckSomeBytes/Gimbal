@@ -15,13 +15,68 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let countdownWindow: BrowserWindow | null = null;
 let backupTimerHandle: NodeJS.Timeout | null = null;
+let activeBackupTimerSignature: string | null = null;
 
-// Get the data directory (same folder as the app)
+// Where config is stored.
+//
+// Packaged builds use Electron's per-user userData directory. The previous
+// location was a `data` folder next to the executable, which is not writable
+// for a normal user under C:\Program Files: saveConfig() caught the EPERM and
+// returned false, so changes were lost on exit with no visible error.
+//
+// Dev keeps using the repo's data/config.json so a working tree stays
+// self-contained.
 function getDataPath(): string {
-  const appPath = app.isPackaged
-    ? join(app.getPath('exe'), '..')
-    : join(__dirname, '..', '..');
-  return join(appPath, 'data', 'config.json');
+  if (!app.isPackaged) {
+    return join(__dirname, '..', '..', 'data', 'config.json');
+  }
+  return join(app.getPath('userData'), 'config.json');
+}
+
+// Config locations used by earlier versions, newest first.
+function getLegacyDataPaths(): string[] {
+  const paths = [join(app.getPath('exe'), '..', 'data', 'config.json')];
+
+  // userData is derived from the app name, so the pre-rename build wrote to a
+  // sibling folder named after the old package name.
+  const userData = app.getPath('userData');
+  const legacyUserData = join(userData, '..', 'teacherspet', 'config.json');
+  paths.push(legacyUserData);
+
+  return paths;
+}
+
+// One-time migration: if the current location has no config but an older one
+// does, copy it across. Copies rather than moves, so the original stays as a
+// fallback if anything goes wrong.
+function migrateConfigIfNeeded(): void {
+  if (!app.isPackaged) return;
+
+  const target = getDataPath();
+  if (existsSync(target)) return;
+
+  for (const source of getLegacyDataPaths()) {
+    try {
+      if (!existsSync(source)) continue;
+
+      // Only accept a file that parses and looks like our config.
+      const raw = readFileSync(source, 'utf-8');
+      const parsed = JSON.parse(raw) as AppConfig;
+      if (!parsed || !Array.isArray(parsed.profiles)) {
+        console.warn(`[Migrate] Skipping ${source}: not a recognisable config`);
+        continue;
+      }
+
+      mkdirSync(join(target, '..'), { recursive: true });
+      writeFileSync(target, raw);
+      console.log(`[Migrate] Imported config from ${source} -> ${target}`);
+      return;
+    } catch (error) {
+      console.error(`[Migrate] Could not import ${source}:`, error);
+    }
+  }
+
+  console.log('[Migrate] No previous config found; starting fresh');
 }
 
 // Load configuration from disk
@@ -149,16 +204,20 @@ async function getWindowList(): Promise<{ title: string; processName: string }[]
 async function checkLink(url: string): Promise<LinkCheckResult> {
   const tryRequest = (method: 'HEAD' | 'GET'): Promise<LinkCheckResult> => {
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        request.abort();
-        resolve({ url, status: 'timeout' });
-      }, 10000);
-
+      // Create the request before arming the timeout: the timeout callback
+      // references `request`, so arming it first left a window where firing it
+      // would throw a ReferenceError inside a bare setTimeout (an uncaught
+      // exception in the main process rather than a handled rejection).
       const request = net.request({
         method,
         url,
         redirect: 'follow',
       });
+
+      const timeout = setTimeout(() => {
+        request.abort();
+        resolve({ url, status: 'timeout' });
+      }, 10000);
 
       request.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       request.setHeader('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8');
@@ -340,6 +399,9 @@ function createWindow(): void {
     height: 600,
     minWidth: 400,
     minHeight: 300,
+    // The window is frameless, so this shows in the taskbar and alt-tab.
+    // Set here as well as in index.html so it is correct before the page loads.
+    title: 'Gimbal — Stay the Course',
     frame: false,
     backgroundColor: '#1a1a2e',
     autoHideMenuBar: true,
@@ -367,9 +429,19 @@ function createWindow(): void {
 // BACKUP FUNCTIONS
 // ============================================================================
 
-// Get the default backup directory
+// Get the default backup directory.
+// New installs use gimbal-backups. If a folder from the previous name exists
+// and the new one does not, keep using it so existing backups stay visible in
+// the restore list rather than being silently orphaned.
 function getDefaultBackupDirectory(): string {
-  return join(app.getPath('documents'), 'teachers-pet-backups');
+  const documents = app.getPath('documents');
+  const current = join(documents, 'gimbal-backups');
+  const legacy = join(documents, 'teachers-pet-backups');
+
+  if (!existsSync(current) && existsSync(legacy)) {
+    return legacy;
+  }
+  return current;
 }
 
 // Calculate SHA256 hash of config for change detection
@@ -543,10 +615,21 @@ function deleteBackup(filepath: string): { success: boolean; error?: string } {
   }
 }
 
+// Describes the settings the backup timer depends on, so we can tell whether a
+// config save actually requires restarting it.
+function getBackupTimerSignature(config: AppConfig): string {
+  const profile = config.profiles.find((p) => p.id === config.currentProfileId);
+  const s = profile?.settings.backupSettings;
+  if (!s?.enabled) return 'disabled';
+  return `enabled:${s.intervalMinutes}:${s.backupDirectory || getDefaultBackupDirectory()}`;
+}
+
 // Start the automatic backup timer
 function startBackupTimer(config: AppConfig): void {
   // Stop any existing timer
   stopBackupTimer();
+
+  activeBackupTimerSignature = getBackupTimerSignature(config);
 
   // Find backup settings from current profile
   const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
@@ -612,6 +695,9 @@ function stopBackupTimer(): void {
     backupTimerHandle = null;
     console.log('[Backup] Auto-backup timer stopped');
   }
+  // Clear the signature so a later save that re-enables backups is always seen
+  // as a change and restarts the timer.
+  activeBackupTimerSignature = null;
 }
 
 // Set up IPC handlers
@@ -622,13 +708,27 @@ function setupIPC(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.SAVE_CONFIG, (_, config: AppConfig) => {
-    return saveConfig(config);
+    const result = saveConfig(config);
+
+    // The backup timer is configured from settings that live in the renderer's
+    // config. Restart it when those settings change, otherwise enabling
+    // auto-backup or changing the interval would not take effect until the next
+    // launch. This also starts the timer on a fresh install, where the renderer
+    // creates backupSettings only after the main process has already booted.
+    if (result) {
+      const signature = getBackupTimerSignature(config);
+      if (signature !== activeBackupTimerSignature) {
+        startBackupTimer(config);
+      }
+    }
+
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.EXPORT_CONFIG, async () => {
     const result = await dialog.showSaveDialog({
       title: 'Export Configuration',
-      defaultPath: 'teacherspet-export.json',
+      defaultPath: 'gimbal-export.json',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
 
@@ -673,7 +773,7 @@ function setupIPC(): void {
     const RATE_LIMIT_DELAY = 500; // ms between requests
     const results: LinkCheckResult[] = [];
 
-    for (const url of urls) {
+    for (const [index, url] of urls.entries()) {
       const result = await checkLink(url);
       results.push(result);
 
@@ -682,8 +782,10 @@ function setupIPC(): void {
         mainWindow.webContents.send(IPC_CHANNELS.LINK_CHECK_RESULT, result);
       }
 
-      // Rate limit: wait before next request
-      if (urls.indexOf(url) < urls.length - 1) {
+      // Rate limit: wait before next request. Uses the loop index rather than
+      // urls.indexOf(url), which returns the first match and so mis-detects the
+      // final item when the same URL appears more than once.
+      if (index < urls.length - 1) {
         await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
       }
     }
@@ -734,6 +836,7 @@ function setupIPC(): void {
         success: string;
         danger: string;
         fontFamily: string;
+        border?: string;
       }
     ) => {
       return openCountdownTimer(totalMinutes, message, theme);
@@ -757,7 +860,8 @@ function setupIPC(): void {
         const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
         const includeBeta = currentProfile?.settings.includeBetaUpdates ?? false;
         autoUpdater.allowPrerelease = includeBeta;
-        console.log(`[Update] Checking for updates (includeBeta: ${includeBeta})...`);
+        autoUpdater.channel = includeBeta ? 'beta' : 'latest';
+        console.log(`[Update] Checking for updates (includeBeta: ${includeBeta}, channel: ${autoUpdater.channel})...`);
         const result = await autoUpdater.checkForUpdates();
         console.log('[Update] Check result:', {
           current: app.getVersion(),
@@ -787,12 +891,13 @@ function setupIPC(): void {
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_UPDATE, async () => {
     try {
       if (app.isPackaged) {
-        // Ensure allowPrerelease matches user setting before download
+        // Ensure allowPrerelease and channel match user setting before download
         const config = loadConfig();
         const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
         const includeBeta = currentProfile?.settings.includeBetaUpdates ?? false;
         autoUpdater.allowPrerelease = includeBeta;
-        console.log(`[Update] Starting download (includeBeta: ${includeBeta})...`);
+        autoUpdater.channel = includeBeta ? 'beta' : 'latest';
+        console.log(`[Update] Starting download (includeBeta: ${includeBeta}, channel: ${autoUpdater.channel})...`);
         const result = await autoUpdater.downloadUpdate();
         console.log('[Update] Download initiated:', result);
         return { success: true };
@@ -890,6 +995,7 @@ interface TimerTheme {
   success: string;
   danger: string;
   fontFamily: string;
+  border?: string;
 }
 
 // Open a countdown timer window
@@ -947,7 +1053,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       text-align: center;
       position: relative;
       -webkit-app-region: drag;
-      border: 2px solid ${theme.border || theme.primary};
+      border: 2px solid ${theme.border || theme.accent};
     }
     button, input, .message-container {
       -webkit-app-region: no-drag;
@@ -1170,13 +1276,15 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
 autoUpdater.allowPrerelease = false; // Default to stable releases only
+// Skip code signature verification for unsigned builds
+(autoUpdater as any).verifyUpdateCodeSignature = () => Promise.resolve(null);
 
 // Explicitly set the feed URL for GitHub releases
 if (app.isPackaged) {
   autoUpdater.setFeedURL({
     provider: 'github',
     owner: 'CheckSomeBytes',
-    repo: 'TeachersPet',
+    repo: 'Gimbal',
   });
 }
 
@@ -1216,6 +1324,10 @@ autoUpdater.on('update-downloaded', (info) => {
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Must run before anything reads config, including the renderer's first
+  // config:load over IPC.
+  migrateConfigIfNeeded();
+
   setupIPC();
   createWindow();
 
@@ -1248,10 +1360,11 @@ app.whenReady().then(() => {
   // Check for updates on startup (only in production)
   if (app.isPackaged) {
     setTimeout(() => {
-      // Set allowPrerelease based on user setting
+      // Set allowPrerelease and channel based on user setting
       const includeBeta = currentProfile?.settings.includeBetaUpdates ?? false;
       autoUpdater.allowPrerelease = includeBeta;
-      console.log(`[Update] Startup check (includeBeta: ${includeBeta})`);
+      autoUpdater.channel = includeBeta ? 'beta' : 'latest';
+      console.log(`[Update] Startup check (includeBeta: ${includeBeta}, channel: ${autoUpdater.channel})`);
       autoUpdater.checkForUpdates().catch((err) => {
         console.error('Error checking for updates on startup:', err);
       });

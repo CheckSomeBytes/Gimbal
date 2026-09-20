@@ -1,8 +1,10 @@
-# TeachersPet
+# Gimbal
+
+> Stay the Course
 
 A Windows desktop application for instructors to organize and share course materials during multi-day training sessions. Built with Electron, React, and TypeScript, featuring a retro 8-bit themed UI.
 
-![TeachersPet Main Interface](docs/images/main.png)
+![Gimbal Main Interface](docs/images/main.png)
 
 ## Features
 
@@ -46,9 +48,9 @@ A Windows desktop application for instructors to organize and share course mater
 
 ### Installation
 
-1. Download the latest installer from [Releases](https://github.com/YOUR_USERNAME/teacherspet/releases)
+1. Download the latest installer from [Releases](https://github.com/CheckSomeBytes/Gimbal/releases)
 2. Run the installer
-3. Launch TeachersPet
+3. Launch Gimbal
 
 ### First Steps
 
@@ -65,6 +67,7 @@ A Windows desktop application for instructors to organize and share course mater
 3. **Configure window targeting**
    - Settings → General → Window Target
    - Set pattern for your chat application (e.g., "Zoom", "Teams")
+   - Click **TEST TARGET** to confirm it matches before class starts
 
    ![Settings](docs/images/settings.png)
 
@@ -192,8 +195,8 @@ Manage multiple courses independently:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/teacherspet.git
-cd teacherspet
+git clone https://github.com/CheckSomeBytes/Gimbal.git
+cd Gimbal
 
 # Install dependencies
 npm install
@@ -325,6 +328,7 @@ AppConfig
 - **Contains mode**: Flexible matching (e.g., "Zoom" matches "Zoom Meeting")
 - **Regex mode**: Advanced patterns (e.g., "sec541-.*student")
 - Test patterns with "Select from open windows"
+- Click **TEST TARGET** to confirm the pattern finds a window before class, without pasting anything
 - Enable "Press Enter after paste" for auto-submit
 
 ### Break Alerts
@@ -338,7 +342,7 @@ AppConfig
 ## Troubleshooting
 
 ### Links not pasting to window
-1. Check window target pattern in Settings → General
+1. Click **TEST TARGET** in Settings → General to see whether the pattern matches
 2. Verify target window is open and visible
 3. Try "Contains" match mode for flexibility
 4. Use "Select from open windows" to test
@@ -392,7 +396,7 @@ Built with:
 ## Support
 
 For issues, feature requests, or questions:
-- GitHub Issues: [https://github.com/YOUR_USERNAME/teacherspet/issues](https://github.com/YOUR_USERNAME/teacherspet/issues)
+- GitHub Issues: [https://github.com/CheckSomeBytes/Gimbal/issues](https://github.com/CheckSomeBytes/Gimbal/issues)
 
 ---
 

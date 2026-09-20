@@ -1,12 +1,13 @@
 {
-  "name": "teacherspet",
-  "version": "1.2.0",
+  "name": "gimbal",
+  "version": "1.4.0-beta.1",
   "description": "A link and notes manager for instructors",
   "author": "CheckSomeBytes",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-builder",
     "package:win": "electron-builder --win"
@@ -31,8 +32,8 @@
     "vite": "^5.0.10"
   },
   "build": {
-    "appId": "com.teacherspet.app",
-    "productName": "TeachersPet",
+    "appId": "com.gimbal.app",
+    "productName": "Gimbal",
     "artifactName": "${productName}-${version}.${ext}",
     "directories": {
       "output": "dist"
@@ -58,7 +59,7 @@
     "publish": {
       "provider": "github",
       "owner": "CheckSomeBytes",
-      "repo": "TeachersPet"
+      "repo": "Gimbal"
     },
     "forceCodeSigning": false
   }

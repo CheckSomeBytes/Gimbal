@@ -27,18 +27,36 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Configure beta channel
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          $pkg.build.publish = @{
+            provider = "github"
+            owner = "CheckSomeBytes"
+            repo = "TeachersPet"
+            channel = "beta"
+          }
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
+
       - name: Package application
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run package
 
+      - name: Remove latest.yml to prevent stable channel pollution
+        shell: pwsh
+        run: |
+          if (Test-Path dist/latest.yml) { Remove-Item dist/latest.yml }
+
       - name: Upload Beta Release Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
             dist/*.exe
-            dist/*.yml
+            dist/beta.yml
+            dist/builder-debug.yml
           prerelease: true
           name: Beta ${{ github.ref_name }}
         env:

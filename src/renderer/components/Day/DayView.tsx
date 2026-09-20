@@ -34,10 +34,10 @@ function DayView({ day }: DayViewProps) {
       const data = JSON.parse(e.dataTransfer.getData('application/section-reorder'));
       const target = (e.target as HTMLElement).closest('[data-section-id]') as HTMLElement | null;
       if (!target) return;
-      const toOrder = Number(target.dataset.sectionOrder);
-      const fromOrder = data.order;
-      if (fromOrder !== toOrder) {
-        reorderSection(day.id, fromOrder, toOrder);
+      const toSectionId = target.dataset.sectionId;
+      const fromSectionId = data.sectionId;
+      if (fromSectionId && toSectionId && fromSectionId !== toSectionId) {
+        reorderSection(day.id, fromSectionId, toSectionId);
       }
     } catch {}
   };
