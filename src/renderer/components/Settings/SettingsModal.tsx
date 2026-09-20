@@ -51,6 +51,10 @@ function SettingsModal() {
   const [isCheckingLinks, setIsCheckingLinks] = useState(false);
   const [windowList, setWindowList] = useState<WindowInfo[]>([]);
   const [isLoadingWindows, setIsLoadingWindows] = useState(false);
+  const [isTestingTarget, setIsTestingTarget] = useState(false);
+  const [targetTestResult, setTargetTestResult] = useState<
+    { ok: boolean; message: string; matches?: string[] } | null
+  >(null);
   const [newDayName, setNewDayName] = useState('');
   const [editingDayId, setEditingDayId] = useState<string | null>(null);
   const [editingDayName, setEditingDayName] = useState('');
@@ -214,6 +218,64 @@ function SettingsModal() {
       removeBackupCreated();
     };
   }, [isSettingsOpen, activeTab]);
+
+  // Dry-run the window target: reports whether the current pattern would find a
+  // window, without stealing focus or pasting anything. Mirrors the matching
+  // PowerShell performs in focusAndPaste, which is case-insensitive for -eq,
+  // -like and -match alike.
+  const handleTestWindowTarget = async () => {
+    const { pattern, matchMode } = settings.windowTarget;
+
+    if (!pattern.trim()) {
+      setTargetTestResult({ ok: false, message: 'No pattern set. Enter one or pick an open window.' });
+      return;
+    }
+
+    setIsTestingTarget(true);
+    setTargetTestResult(null);
+    try {
+      const windows = await window.electronAPI.getWindowList();
+
+      let matches: string[];
+      if (matchMode === 'regex') {
+        let re: RegExp;
+        try {
+          re = new RegExp(pattern, 'i');
+        } catch {
+          setTargetTestResult({ ok: false, message: `"${pattern}" is not a valid regular expression.` });
+          return;
+        }
+        matches = windows.filter((w) => re.test(w.title)).map((w) => w.title);
+      } else {
+        const needle = pattern.toLowerCase();
+        matches = windows
+          .filter((w) => {
+            const title = w.title.toLowerCase();
+            return matchMode === 'exact' ? title === needle : title.includes(needle);
+          })
+          .map((w) => w.title);
+      }
+
+      if (matches.length === 0) {
+        setTargetTestResult({
+          ok: false,
+          message: `No open window matches "${pattern}" (${matchMode}). Open the target app, or pick it from the list below.`,
+        });
+      } else if (matches.length === 1) {
+        setTargetTestResult({ ok: true, message: 'Match found — pasting should work.', matches });
+      } else {
+        setTargetTestResult({
+          ok: true,
+          message: `${matches.length} windows match. The first one is used, which may not be the one you want.`,
+          matches,
+        });
+      }
+    } catch {
+      setTargetTestResult({ ok: false, message: 'Could not read the window list.' });
+    } finally {
+      setIsTestingTarget(false);
+    }
+  };
 
   const loadWindowList = async () => {
     setIsLoadingWindows(true);
@@ -1196,31 +1258,69 @@ function SettingsModal() {
                     className="input"
                     placeholder="e.g., Zoom Meeting, Slack, etc."
                     value={settings.windowTarget.pattern}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setTargetTestResult(null);
                       updateSettings({
                         windowTarget: {
                           ...settings.windowTarget,
                           pattern: e.target.value,
                         },
-                      })
-                    }
+                      });
+                    }}
                   />
                   <select
                     className="select settings-match-mode"
                     value={settings.windowTarget.matchMode}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setTargetTestResult(null);
                       updateSettings({
                         windowTarget: {
                           ...settings.windowTarget,
                           matchMode: e.target.value as 'exact' | 'contains' | 'regex',
                         },
-                      })
-                    }
+                      });
+                    }}
                   >
                     <option value="contains">Contains</option>
                     <option value="exact">Exact</option>
                     <option value="regex">Regex</option>
                   </select>
+                </div>
+                <div className="settings-target-test">
+                  <button
+                    className="btn btn--small btn--secondary"
+                    onClick={handleTestWindowTarget}
+                    disabled={isTestingTarget}
+                    title="Check this pattern finds a window, without pasting anything"
+                  >
+                    {isTestingTarget ? 'TESTING...' : 'TEST TARGET'}
+                  </button>
+                  {targetTestResult && (
+                    <div
+                      className={`settings-target-test-result ${
+                        targetTestResult.ok
+                          ? 'settings-target-test-result--ok'
+                          : 'settings-target-test-result--fail'
+                      }`}
+                    >
+                      <span className="settings-target-test-icon">
+                        {targetTestResult.ok ? '✓' : '⚠'}
+                      </span>
+                      <div className="settings-target-test-body">
+                        <div>{targetTestResult.message}</div>
+                        {targetTestResult.matches && targetTestResult.matches.length > 0 && (
+                          <ul className="settings-target-test-matches">
+                            {targetTestResult.matches.slice(0, 5).map((title, i) => (
+                              <li key={i} className="truncate" title={title}>
+                                {i === 0 ? '→ ' : ''}
+                                {title}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
