@@ -75,14 +75,14 @@ BRANCH TYPES:
 ┌─────────────────────────────────────────────────┐
 │  GitHub Actions: release.yml triggered          │
 │  • Builds app                                   │
-│  • Creates installer (TeachersPet-Setup-1.2.0)  │
+│  • Creates installer (Gimbal-Setup-1.2.0)  │
 │  • Uploads to GitHub Release                    │
 │  • Generates latest.yml                         │
 └─────────────────┬───────────────────────────────┘
                   │
                   ↓
 ┌─────────────────────────────────────────────────┐
-│  User opens TeachersPet (current v1.1.0)        │
+│  User opens Gimbal (current v1.1.0)        │
 │  • App checks GitHub on startup                 │
 │  • Finds update available: v1.2.0               │
 │  • Shows notification in settings               │

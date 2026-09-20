@@ -1,4 +1,4 @@
-// Core data types for TeachersPet
+// Core data types for Gimbal
 
 export interface Profile {
   id: string;

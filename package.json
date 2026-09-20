@@ -1,5 +1,5 @@
 {
-  "name": "teacherspet",
+  "name": "gimbal",
   "version": "1.3.0-beta.3",
   "description": "A link and notes manager for instructors",
   "author": "CheckSomeBytes",
@@ -32,8 +32,8 @@
     "vite": "^5.0.10"
   },
   "build": {
-    "appId": "com.teacherspet.app",
-    "productName": "TeachersPet",
+    "appId": "com.gimbal.app",
+    "productName": "Gimbal",
     "artifactName": "${productName}-${version}.${ext}",
     "directories": {
       "output": "dist"
@@ -59,7 +59,7 @@
     "publish": {
       "provider": "github",
       "owner": "CheckSomeBytes",
-      "repo": "TeachersPet"
+      "repo": "Gimbal"
     },
     "forceCodeSigning": false
   }

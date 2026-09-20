@@ -1,8 +1,10 @@
-# TeachersPet
+# Gimbal
+
+> Stay the Course
 
 A Windows desktop application for instructors to organize and share course materials during multi-day training sessions. Built with Electron, React, and TypeScript, featuring a retro 8-bit themed UI.
 
-![TeachersPet Main Interface](docs/images/main.png)
+![Gimbal Main Interface](docs/images/main.png)
 
 ## Features
 
@@ -46,9 +48,9 @@ A Windows desktop application for instructors to organize and share course mater
 
 ### Installation
 
-1. Download the latest installer from [Releases](https://github.com/YOUR_USERNAME/teacherspet/releases)
+1. Download the latest installer from [Releases](https://github.com/CheckSomeBytes/Gimbal/releases)
 2. Run the installer
-3. Launch TeachersPet
+3. Launch Gimbal
 
 ### First Steps
 
@@ -193,8 +195,8 @@ Manage multiple courses independently:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/teacherspet.git
-cd teacherspet
+git clone https://github.com/CheckSomeBytes/Gimbal.git
+cd Gimbal
 
 # Install dependencies
 npm install
@@ -394,7 +396,7 @@ Built with:
 ## Support
 
 For issues, feature requests, or questions:
-- GitHub Issues: [https://github.com/YOUR_USERNAME/teacherspet/issues](https://github.com/YOUR_USERNAME/teacherspet/issues)
+- GitHub Issues: [https://github.com/CheckSomeBytes/Gimbal/issues](https://github.com/CheckSomeBytes/Gimbal/issues)
 
 ---
 
