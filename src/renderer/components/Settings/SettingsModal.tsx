@@ -231,16 +231,24 @@ function SettingsModal() {
   const handleCheckAllLinks = async () => {
     setIsCheckingLinks(true);
 
-    const urls: string[] = [];
+    // Collect every URL, expanding multi-link groups. For a group the real URLs
+    // live in additionalUrls; item.url is only a copy of the first one, so
+    // checking it alone silently skipped the rest of the group.
+    const urlSet = new Set<string>();
     currentProfile.days.forEach((day) => {
       day.sections.forEach((section) => {
         section.items.forEach((item) => {
           if (item.type === 'link') {
-            urls.push(item.url);
+            if (item.additionalUrls && item.additionalUrls.length > 0) {
+              item.additionalUrls.forEach((a) => urlSet.add(a.url));
+            } else {
+              urlSet.add(item.url);
+            }
           }
         });
       });
     });
+    const urls = Array.from(urlSet);
 
     if (urls.length === 0) {
       addNotification('No links to check', 'info');
@@ -252,9 +260,12 @@ function SettingsModal() {
       const results = await window.electronAPI.checkAllLinks(urls);
       const broken = results.filter((r) => r.status !== 'ok');
 
+      // Apply all statuses without saving, then persist once, instead of
+      // writing the whole config to disk for every single result.
       results.forEach((result) => {
-        useAppStore.getState().updateLinkStatus(result.url, result.status);
+        useAppStore.getState().updateLinkStatus(result.url, result.status, true);
       });
+      await useAppStore.getState().saveConfig();
 
       if (broken.length === 0) {
         addNotification(`All ${urls.length} links are OK!`, 'success');

@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       success: string;
       danger: string;
       fontFamily: string;
+      border?: string;
     }
   ): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.OPEN_COUNTDOWN_TIMER, totalMinutes, message, theme);
@@ -201,6 +202,7 @@ declare global {
           success: string;
           danger: string;
           fontFamily: string;
+          border?: string;
         }
       ) => Promise<boolean>;
       quitApp: () => Promise<void>;
