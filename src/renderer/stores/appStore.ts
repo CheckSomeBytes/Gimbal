@@ -25,6 +25,19 @@ interface Notification {
   type: 'info' | 'success' | 'error';
 }
 
+// Derive a multi-link group's overall status from its child URLs. Priority
+// matches the icon shown in LinkItem: real failures first, then in-progress,
+// then all-clear, then unverifiable.
+function aggregateLinkStatus(entries: AdditionalUrl[]): LinkStatus {
+  if (entries.length === 0) return 'unchecked';
+  const statuses = entries.map((e) => e.status);
+  if (statuses.includes('broken')) return 'broken';
+  if (statuses.includes('timeout')) return 'timeout';
+  if (statuses.includes('pending')) return 'pending';
+  if (statuses.every((s) => s === 'ok')) return 'ok';
+  return 'unchecked';
+}
+
 interface AppState {
   config: AppConfig;
   selectedDayId: string | null;
@@ -100,7 +113,7 @@ interface AppState {
   moveItems: (targetDayId: string, targetSectionId: string) => void;
   moveSections: (targetDayId: string) => void;
   moveItemToSection: (itemId: string, sourceDayId: string, sourceSectionId: string, targetDayId: string, targetSectionId: string) => void;
-  reorderSection: (dayId: string, fromIndex: number, toIndex: number) => void;
+  reorderSection: (dayId: string, fromSectionId: string, toSectionId: string) => void;
 
   // UI
   toggleSidebar: () => void;
@@ -256,12 +269,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             get().updateLinkStatus(result.url, result.status, true);
           });
 
-          // Start checking (results will stream via the listener)
-          await window.electronAPI.checkAllLinks(urls);
-
-          // Cleanup listener and save once at the end
-          unsubscribe();
-          get().saveConfig();
+          try {
+            // Start checking (results will stream via the listener)
+            await window.electronAPI.checkAllLinks(urls);
+          } finally {
+            // Always drop the listener, even if the check throws; otherwise it
+            // stayed registered for the lifetime of the app.
+            unsubscribe();
+            get().saveConfig();
+          }
         }
       }
     } catch (error) {
@@ -876,9 +892,12 @@ export const useAppStore = create<AppState>((set, get) => ({
                         const updatedAdditionalUrls = item.additionalUrls.map(a =>
                           a.url === url ? { ...a, status } : a
                         );
-                        // Set parent status to broken/timeout if any child is broken/timeout
-                        const hasIssue = updatedAdditionalUrls.some(a => a.status === 'broken' || a.status === 'timeout');
-                        const parentStatus = hasIssue ? (updatedAdditionalUrls.find(a => a.status === 'broken')?.status || 'timeout') : item.status;
+                        // Always recompute the group status from its children.
+                        // Previously this only ever set the status toward
+                        // broken and fell back to the old value otherwise, so a
+                        // group stayed 'broken' forever once any child failed,
+                        // even after every child was fixed and re-checked.
+                        const parentStatus = aggregateLinkStatus(updatedAdditionalUrls);
                         return {
                           ...item,
                           additionalUrls: updatedAdditionalUrls,
@@ -1363,12 +1382,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().addNotification(`Moved ${sectionsToMove.length} section(s)`, 'success');
   },
 
-  reorderSection: (dayId, fromIndex, toIndex) => {
+  reorderSection: (dayId, fromSectionId, toSectionId) => {
     set((state) => {
       const currentProfile = state.config.profiles.find((p) => p.id === state.config.currentProfileId)!;
       const day = currentProfile.days.find((d) => d.id === dayId);
       if (!day) return state;
       const sections = [...day.sections].sort((a, b) => a.order - b.order);
+      // Resolve positions by id: stored `order` values can be stale, duplicated,
+      // or have gaps (legacy configs, cross-day moves), which made index math
+      // splice out `undefined` and corrupt the section list.
+      const fromIndex = sections.findIndex((s) => s.id === fromSectionId);
+      const toIndex = sections.findIndex((s) => s.id === toSectionId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return state;
       const [moved] = sections.splice(fromIndex, 1);
       sections.splice(toIndex, 0, moved);
       const reordered = sections.map((s, i) => ({ ...s, order: i }));

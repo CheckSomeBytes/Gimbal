@@ -36,3 +36,6 @@ helper/
 # Workflow setup files (local use only)
 scripts/
 setup-workflow.md
+
+# TypeScript incremental build info
+*.tsbuildinfo

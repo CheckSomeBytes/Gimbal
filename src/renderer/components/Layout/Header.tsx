@@ -218,6 +218,31 @@ function Header() {
     }
   }, [openLabNotesLabNumber]);
 
+  const openSearchPopup = useCallback(() => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchPopup(true);
+  }, []);
+
+  // Global shortcuts: Ctrl/Cmd+K opens search, Ctrl/Cmd+S opens settings.
+  // Both were documented in the README but never implemented.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
+        e.preventDefault();
+        openSearchPopup();
+      } else if (key === 's') {
+        // Prevent the browser "save page" dialog in dev.
+        e.preventDefault();
+        openSettingsToTab('general');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [openSearchPopup, openSettingsToTab]);
+
   // Get current time in the selected timezone
   const getCurrentTimeInTimezone = () => {
     const timeStr = currentTime.toLocaleTimeString('en-US', {
@@ -409,6 +434,7 @@ function Header() {
       success: theme.colors.success,
       danger: theme.colors.danger,
       fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
+      border: theme.colors.border,
     });
     addNotification('Countdown timer opened!', 'success');
   };
@@ -450,6 +476,7 @@ function Header() {
         success: theme.colors.success,
         danger: theme.colors.danger,
         fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
+        border: theme.colors.border,
       });
 
       addNotification('Time estimate sent and timer opened!', 'success');
@@ -475,6 +502,7 @@ function Header() {
       success: theme.colors.success,
       danger: theme.colors.danger,
       fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
+      border: theme.colors.border,
     });
     addNotification('Countdown timer opened!', 'success');
     setShowTimeEstimatePopup(false);
@@ -962,12 +990,8 @@ function Header() {
         </button>
         <button
           className="header-search-btn btn btn--small"
-          onClick={() => {
-            setShowSearchPopup(true);
-            setSearchQuery('');
-            setSearchResults([]);
-          }}
-          title="Search links and notes"
+          onClick={openSearchPopup}
+          title="Search links and notes (Ctrl+K)"
         >
           🔍
         </button>

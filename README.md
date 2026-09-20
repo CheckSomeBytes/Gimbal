@@ -65,6 +65,7 @@ A Windows desktop application for instructors to organize and share course mater
 3. **Configure window targeting**
    - Settings → General → Window Target
    - Set pattern for your chat application (e.g., "Zoom", "Teams")
+   - Click **TEST TARGET** to confirm it matches before class starts
 
    ![Settings](docs/images/settings.png)
 
@@ -325,6 +326,7 @@ AppConfig
 - **Contains mode**: Flexible matching (e.g., "Zoom" matches "Zoom Meeting")
 - **Regex mode**: Advanced patterns (e.g., "sec541-.*student")
 - Test patterns with "Select from open windows"
+- Click **TEST TARGET** to confirm the pattern finds a window before class, without pasting anything
 - Enable "Press Enter after paste" for auto-submit
 
 ### Break Alerts
@@ -338,7 +340,7 @@ AppConfig
 ## Troubleshooting
 
 ### Links not pasting to window
-1. Check window target pattern in Settings → General
+1. Click **TEST TARGET** in Settings → General to see whether the pattern matches
 2. Verify target window is open and visible
 3. Try "Contains" match mode for flexibility
 4. Use "Select from open windows" to test

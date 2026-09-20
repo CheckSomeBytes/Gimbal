@@ -27,6 +27,7 @@ function ValidationModal() {
     updateSettings({
       timezone,
       windowTarget: {
+        ...currentProfile.settings.windowTarget,
         matchMode,
         pattern: windowPattern,
       },
