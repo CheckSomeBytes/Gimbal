@@ -1,0 +1,27 @@
+# Normalize line endings.
+#
+# This repo is worked on from both Windows and WSL. Without this, each side
+# writes its own line endings and git records every flip as a full-file
+# rewrite, burying real changes in thousands of phantom diff lines.
+#
+# `text=auto` stores everything as LF inside git and checks each file out with
+# the endings native to the platform.
+* text=auto
+
+# Binary files: never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.exe binary
+*.dll binary
+*.zip binary
+
+# Always LF, regardless of platform: these break if checked out with CRLF.
+*.sh text eol=lf
