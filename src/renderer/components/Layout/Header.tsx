@@ -1082,13 +1082,6 @@ function Header() {
               <span className="lab-popup-title">Lab {openLabNotesLabNumber} Notes</span>
               <div className="lab-popup-header-right">
                 <button
-                  className="btn btn--small btn--success"
-                  onClick={() => handleQuickLabPoll(openLabNotesLabNumber)}
-                  title="Send lab poll to target window"
-                >
-                  🧪 SEND POLL
-                </button>
-                <button
                   className="btn btn--small btn--danger"
                   onClick={() => setOpenLabNotesLabNumber(null)}
                 >
@@ -1106,13 +1099,22 @@ function Header() {
                 placeholder="Enter your lab notes here... Markdown is supported."
                 autoFocus
                 actions={
-                  <button
-                    className="btn btn--small btn--secondary"
-                    onClick={handleCopyLabNotes}
-                    title="Copy notes as plain text"
-                  >
-                    COPY
-                  </button>
+                  <>
+                    <button
+                      className="btn btn--small btn--secondary"
+                      onClick={handleCopyLabNotes}
+                      title="Copy notes as plain text"
+                    >
+                      COPY
+                    </button>
+                    <button
+                      className="btn btn--small btn--success"
+                      onClick={() => handleQuickLabPoll(openLabNotesLabNumber)}
+                      title="Send lab poll to target window"
+                    >
+                      🧪 SEND POLL
+                    </button>
+                  </>
                 }
               />
             </div>
