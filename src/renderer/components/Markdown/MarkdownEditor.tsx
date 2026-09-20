@@ -225,21 +225,20 @@ function MarkdownEditor({ value, onChange, placeholder, autoFocus, actions }: Ma
   return (
     <div className="md-editor">
       <div className="md-editor-tabs">
-        <div className="md-editor-tab-group">
-          <button
-            type="button"
-            className={`md-editor-tab ${mode === 'preview' ? 'md-editor-tab--active' : ''}`}
-            onClick={() => setMode('preview')}
-          >
+        <div
+          className={`md-mode-toggle ${mode === 'edit' ? 'md-mode-toggle--edit' : ''}`}
+          onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
+          title={mode === 'edit' ? 'Switch to Preview mode' : 'Switch to Edit mode'}
+        >
+          <span className={`md-mode-label ${mode === 'preview' ? 'md-mode-label--active' : ''}`}>
             PREVIEW
-          </button>
-          <button
-            type="button"
-            className={`md-editor-tab ${mode === 'edit' ? 'md-editor-tab--active' : ''}`}
-            onClick={() => setMode('edit')}
-          >
+          </span>
+          <div className="md-mode-track">
+            <div className="md-mode-thumb" />
+          </div>
+          <span className={`md-mode-label ${mode === 'edit' ? 'md-mode-label--active' : ''}`}>
             EDIT
-          </button>
+          </span>
         </div>
         {actions && <div className="md-editor-tab-actions">{actions}</div>}
       </div>
