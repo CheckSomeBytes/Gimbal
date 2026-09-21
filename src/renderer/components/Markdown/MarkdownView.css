@@ -91,6 +91,11 @@
   padding: 1px 4px;
 }
 
+.md-code-block-wrap {
+  position: relative;
+  margin: 0 0 var(--spacing-sm);
+}
+
 .md-code-block {
   font-family: "Courier New", monospace;
   font-size: var(--font-size-sm);
@@ -98,10 +103,47 @@
   border: 2px solid var(--color-border);
   border-left: 4px solid var(--color-primary);
   padding: var(--spacing-sm);
-  margin: 0 0 var(--spacing-sm);
+  margin: 0;
   overflow-x: auto;
   white-space: pre;
   line-height: 1.5;
+}
+
+/* Copy button: sits in the top-right of the block, revealed on hover/focus.
+   Uses only theme custom properties so it tracks every preset and custom theme. */
+.md-code-copy {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease-in-out;
+}
+
+.md-code-block-wrap:hover .md-code-copy,
+.md-code-copy:focus-visible {
+  opacity: 1;
+}
+
+.md-code-copy:hover {
+  background-color: var(--color-accent);
+  color: var(--color-background);
+  border-color: var(--color-accent);
+}
+
+.md-code-copy--copied,
+.md-code-copy--copied:hover {
+  opacity: 1;
+  background-color: var(--color-success);
+  color: var(--color-background);
+  border-color: var(--color-success);
 }
 
 .md-code-block code {

@@ -516,11 +516,19 @@ function blocksToText(blocks: BlockNode[], depth = 0): string {
           return pad + inlineToText(block.children);
         case 'paragraph':
           return pad + inlineToText(block.children);
-        case 'code':
-          return block.value
-            .split('\n')
-            .map((l) => pad + l)
-            .join('\n');
+        case 'code': {
+          // Keep the fences so pasted notes still show where code starts and ends.
+          // Strip the smallest shared indent first: a fence nested in a list keeps
+          // its source indentation in `value`, which would skew against the fences.
+          const lines = block.value.split('\n');
+          const indents = lines
+            .filter((l) => l.trim())
+            .map((l) => l.length - l.trimStart().length);
+          const common = indents.length ? Math.min(...indents) : 0;
+          const body = lines.map((l) => pad + l.slice(common)).join('\n');
+          const fence = pad + '```';
+          return `${fence}${block.lang}\n${body}\n${fence}`;
+        }
         case 'quote':
           return blocksToText(block.blocks, depth)
             .split('\n')

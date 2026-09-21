@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BlockNode, InlineNode, parseMarkdown } from './markdown';
 import './MarkdownView.css';
 
@@ -60,6 +60,38 @@ function renderInline(nodes: InlineNode[], keyPrefix: string): React.ReactNode[]
   });
 }
 
+/** Fenced code block with a copy-to-clipboard button. */
+function CodeBlock({ lang, value }: { lang: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="md-code-block-wrap">
+      <pre className="md-code-block" data-lang={lang || undefined}>
+        <code>{value}</code>
+      </pre>
+      <button
+        type="button"
+        className={`md-code-copy ${copied ? 'md-code-copy--copied' : ''}`}
+        onClick={handleCopy}
+        title="Copy code to clipboard"
+        aria-label="Copy code to clipboard"
+      >
+        {copied ? 'COPIED' : 'COPY'}
+      </button>
+    </div>
+  );
+}
+
 function renderBlocks(blocks: BlockNode[], keyPrefix: string): React.ReactNode[] {
   return blocks.map((block, i) => {
     const key = `${keyPrefix}-${i}`;
@@ -79,11 +111,7 @@ function renderBlocks(blocks: BlockNode[], keyPrefix: string): React.ReactNode[]
           </p>
         );
       case 'code':
-        return (
-          <pre key={key} className="md-code-block" data-lang={block.lang || undefined}>
-            <code>{block.value}</code>
-          </pre>
-        );
+        return <CodeBlock key={key} lang={block.lang} value={block.value} />;
       case 'quote':
         return (
           <blockquote key={key} className="md-quote">

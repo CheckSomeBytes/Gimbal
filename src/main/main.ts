@@ -159,23 +159,88 @@ async function fetchPageTitle(url: string): Promise<string> {
   }
 }
 
+// Shared PowerShell type: enumerates every top-level window, not just each
+// process's "main" window. Get-Process only reports MainWindowTitle, so apps
+// that hold several windows (Slack, Chrome, PowerPoint) were invisible unless
+// Windows happened to designate the wanted one as main.
+const PS_WINDOW_HELPER = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+public class GimbalWin {
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr l);
+    public delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool f);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+
+    public class Win { public IntPtr Handle; public string Title; public string ProcessName; }
+
+    public static List<Win> All() {
+        var res = new List<Win>();
+        EnumWindows((h, l) => {
+            // Minimized windows still count: they are restorable targets.
+            if (!IsWindowVisible(h) && !IsIconic(h)) return true;
+            var sb = new StringBuilder(512);
+            GetWindowText(h, sb, 512);
+            if (sb.Length == 0) return true;
+            string pname = "";
+            try {
+                uint pid; GetWindowThreadProcessId(h, out pid);
+                pname = Process.GetProcessById((int)pid).ProcessName;
+            } catch {}
+            res.Add(new Win { Handle = h, Title = sb.ToString(), ProcessName = pname });
+            return true;
+        }, IntPtr.Zero);
+        return res;
+    }
+
+    // SetForegroundWindow is refused unless the calling thread owns the
+    // foreground. Attaching to the current foreground thread lifts that.
+    public static bool Focus(IntPtr h) {
+        if (IsIconic(h)) ShowWindow(h, 9); // SW_RESTORE
+        IntPtr fg = GetForegroundWindow();
+        uint targetPid, fgPid;
+        uint targetThread = GetWindowThreadProcessId(h, out targetPid);
+        uint fgThread = GetWindowThreadProcessId(fg, out fgPid);
+        uint thisThread = GetCurrentThreadId();
+        if (fgThread != thisThread) AttachThreadInput(thisThread, fgThread, true);
+        BringWindowToTop(h);
+        bool ok = SetForegroundWindow(h);
+        if (fgThread != thisThread) AttachThreadInput(thisThread, fgThread, false);
+        for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) System.Threading.Thread.Sleep(25);
+        return GetForegroundWindow() == h;
+    }
+}
+'@
+`;
+
 // Get list of open windows (Windows only)
 async function getWindowList(): Promise<{ title: string; processName: string }[]> {
   if (process.platform !== 'win32') {
     return [];
   }
 
-  const { exec } = require('child_process');
+  const { execFile } = require('child_process');
 
   return new Promise((resolve) => {
-    const psScript = `
-      Get-Process | Where-Object { $_.MainWindowTitle -ne '' } |
-      Select-Object ProcessName, MainWindowTitle |
-      ConvertTo-Json
-    `;
+    const psScript = `${PS_WINDOW_HELPER}
+[GimbalWin]::All() | Select-Object ProcessName, Title | ConvertTo-Json -Compress
+`;
 
-    exec(
-      `powershell -Command "${psScript.replace(/\n/g, ' ')}"`,
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
       (error: Error | null, stdout: string) => {
         if (error) {
           resolve([]);
@@ -187,8 +252,8 @@ async function getWindowList(): Promise<{ title: string; processName: string }[]
           // Handle single result (not an array)
           const windows = Array.isArray(result) ? result : [result];
           resolve(
-            windows.map((w: { ProcessName: string; MainWindowTitle: string }) => ({
-              title: w.MainWindowTitle,
+            windows.map((w: { ProcessName: string; Title: string }) => ({
+              title: w.Title,
               processName: w.ProcessName,
             }))
           );
@@ -317,42 +382,43 @@ async function focusAndPaste(
       let matchCondition: string;
       switch (matchMode) {
         case 'exact':
-          matchCondition = `$_.MainWindowTitle -eq '${escapedPattern}'`;
+          matchCondition = `$_.Title -eq '${escapedPattern}'`;
           break;
         case 'contains':
-          matchCondition = `$_.MainWindowTitle -like '*${escapedPattern}*'`;
+          matchCondition = `$_.Title -like '*${escapedPattern}*'`;
           break;
         case 'regex':
-          matchCondition = `$_.MainWindowTitle -match '${escapedPattern}'`;
+          matchCondition = `$_.Title -match '${escapedPattern}'`;
           break;
       }
 
-      // Use a simpler approach: separate commands
-      const psScript = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public class Win32Helper {
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-}
-'@
-
-$allWindows = Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object ProcessName, MainWindowTitle
+      // Enumerate every top-level window (not just per-process main windows),
+      // then focus the match and paste into it.
+      const psScript = `${PS_WINDOW_HELPER}
+$all = [GimbalWin]::All()
 Write-Host "DEBUG: Available windows:"
-$allWindows | ForEach-Object { Write-Host "  - $($_.ProcessName): $($_.MainWindowTitle)" }
+$all | ForEach-Object { Write-Host "  - $($_.ProcessName): $($_.Title)" }
 Write-Host "DEBUG: Looking for pattern '${escapedPattern}' with condition: ${matchCondition}"
 
-$proc = Get-Process | Where-Object { $_.MainWindowTitle -ne '' -and (${matchCondition}) } | Select-Object -First 1
-if ($proc -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
-    Write-Host "DEBUG: Found window - $($proc.ProcessName): $($proc.MainWindowTitle)"
-    [Win32Helper]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
-    Start-Sleep -Milliseconds 300
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.SendKeys]::SendWait('^v')
-    ${pressEnter ? `Start-Sleep -Milliseconds 100
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')` : ''}
-    Write-Output 'SUCCESS'
+$matches = @($all | Where-Object { ${matchCondition} })
+if ($matches.Count -gt 1) {
+    Write-Host "DEBUG: $($matches.Count) windows matched; using the first."
+}
+$win = $matches | Select-Object -First 1
+if ($win) {
+    Write-Host "DEBUG: Found window - $($win.ProcessName): $($win.Title)"
+    $focused = [GimbalWin]::Focus($win.Handle)
+    if (-not $focused) {
+        Write-Host "DEBUG: Could not bring window to foreground"
+        Write-Output 'NOFOCUS'
+    } else {
+        Start-Sleep -Milliseconds 150
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
+        ${pressEnter ? `Start-Sleep -Milliseconds 100
+        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')` : ''}
+        Write-Output 'SUCCESS'
+    }
 } else {
     Write-Host "DEBUG: No matching window found"
     Write-Output 'NOTFOUND'
@@ -373,6 +439,13 @@ if ($proc -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
           } else if (stdout.includes('SUCCESS')) {
             console.log('PowerShell debug output:', stdout);
             resolve({ success: true });
+          } else if (stdout.includes('NOFOCUS')) {
+            console.log('PowerShell output:', stdout);
+            resolve({
+              success: false,
+              error:
+                'Found the window but Windows blocked focusing it. Click the target window once, then try again.',
+            });
           } else {
             console.log('PowerShell output:', stdout);
             console.log('Pattern used:', pattern);
