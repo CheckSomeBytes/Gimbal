@@ -1,0 +1,50 @@
+name: Smoke Verify (temporary)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+
+      - name: Smoke test should PASS on the fixed build
+        shell: pwsh
+        env:
+          ELECTRON_DISABLE_GPU: 1
+        run: |
+          $output = npm run smoke 2>&1 | Out-String
+          Write-Host $output
+          if ($output -notmatch 'SMOKE TEST EXIT 0') {
+            Write-Error "Expected pass, but the smoke test did not report EXIT 0"
+            exit 1
+          }
+          Write-Host "PASS case OK on windows-latest"
+
+      - name: Smoke test should FAIL when the preload is split
+        shell: pwsh
+        env:
+          ELECTRON_DISABLE_GPU: 1
+        run: |
+          # Reintroduce the v1.6.0-beta.2 bug and confirm the test catches it
+          # here, not just locally.
+          git checkout b1b6253 -- electron.vite.config.ts src/preload/countdownPreload.ts
+          npm run build
+          $output = npm run smoke 2>&1 | Out-String
+          Write-Host $output
+          if ($output -match 'SMOKE TEST EXIT 0') {
+            Write-Error "Smoke test passed on a known-broken build - it is not catching the regression"
+            exit 1
+          }
+          if ($output -notmatch 'preload failed to load') {
+            Write-Error "Smoke test failed, but not for the expected preload reason"
+            exit 1
+          }
+          Write-Host "FAIL case correctly detected on windows-latest"
+          git checkout HEAD -- electron.vite.config.ts src/preload/countdownPreload.ts
