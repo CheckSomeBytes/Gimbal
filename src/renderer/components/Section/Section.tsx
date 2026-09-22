@@ -1,6 +1,7 @@
 import React, { useState, DragEvent } from 'react';
 import { Section } from '../../../shared/types';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import LinkItem from '../Link/LinkItem';
 import NoteItem from '../Note/NoteItem';
 import PollItem from '../Poll/PollItem';
@@ -21,6 +22,7 @@ function SectionComponent({ dayId, section }: SectionProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLabDragOver, setIsLabDragOver] = useState(false);
   const [showPolls, setShowPolls] = useState(false);
+  const pollsOverlayDismiss = useOverlayDismiss(() => setShowPolls(false));
   const [isAddingPoll, setIsAddingPoll] = useState(false);
   const [isSectionDragging, setIsSectionDragging] = useState(false);
   const currentProfile = getCurrentProfile();
@@ -266,7 +268,7 @@ function SectionComponent({ dayId, section }: SectionProps) {
 
       {/* Polls popup */}
       {showPolls && (
-        <div className="section-polls-overlay" onClick={() => setShowPolls(false)}>
+        <div className="section-polls-overlay" {...pollsOverlayDismiss}>
           <div className="section-polls-popup" onClick={(e) => e.stopPropagation()}>
             <div className="section-polls-header">
               <span className="section-polls-title">Polls - {section.name}</span>

@@ -1,6 +1,7 @@
 import React, { useState, DragEvent } from 'react';
 import { Link, AdditionalUrl } from '../../../shared/types';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import iconBrowser from '../../assets/icon-browser.png';
 import iconSlack from '../../assets/icon-slack.png';
 import iconClipboard from '../../assets/icon-clipboard.png';
@@ -59,6 +60,8 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
     setEditGroupTitle(link.customTitle || link.title);
     setEditEntries(link.additionalUrls || [{ url: link.url, title: link.customTitle || link.title }]);
   };
+
+  const overlayDismiss = useOverlayDismiss(handleCancelEdit);
 
   const handleOpenInChrome = async (url: string) => {
     try {
@@ -208,7 +211,7 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
 
   if (isEditing) {
     return (
-      <div className="edit-item-overlay" onClick={handleCancelEdit}>
+      <div className="edit-item-overlay" {...overlayDismiss}>
       <div className="add-item-form" onClick={(e) => e.stopPropagation()}>
         {isMultiUrl ? (
           <div className="add-item-fields">

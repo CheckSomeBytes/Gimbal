@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import { DEFAULT_THEME, Theme, ThemeColors, PRESET_THEMES, TIMEZONES, ScheduledTime, FontSize, BackupMetadata } from '../../../shared/types';
 import './SettingsModal.css';
 
@@ -76,6 +77,8 @@ function SettingsModal() {
   const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
   const [isBreakAlertDropdownOpen, setIsBreakAlertDropdownOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<{ key: keyof ThemeColors; label: string } | null>(null);
+  const settingsOverlayDismiss = useOverlayDismiss(toggleSettings);
+  const colorPickerOverlayDismiss = useOverlayDismiss(() => setColorPickerOpen(null));
   const [tempColorValue, setTempColorValue] = useState('');
 
   const { settings } = currentProfile;
@@ -614,7 +617,7 @@ function SettingsModal() {
   };
 
   return (
-    <div className="settings-overlay" onClick={toggleSettings}>
+    <div className="settings-overlay" {...settingsOverlayDismiss}>
       <div className="settings-modal panel" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h2 className="settings-title">SETTINGS</h2>
@@ -2126,7 +2129,7 @@ function SettingsModal() {
       </div>
 
       {colorPickerOpen && (
-        <div className="settings-color-picker-overlay" onClick={() => setColorPickerOpen(null)}>
+        <div className="settings-color-picker-overlay" {...colorPickerOverlayDismiss}>
           <div className="settings-color-picker-modal panel" onClick={(e) => e.stopPropagation()}>
             <h3 className="settings-section-title">EDIT {colorPickerOpen.label}</h3>
 

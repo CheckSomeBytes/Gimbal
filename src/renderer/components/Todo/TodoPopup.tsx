@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import './TodoPopup.css';
 
 function TodoPopup() {
@@ -29,6 +30,10 @@ function TodoPopup() {
       inputRef.current?.focus();
     }
   }, [isTodoPopupOpen]);
+
+  // Declared before the early return: hooks must run in the same order on
+  // every render, open or closed.
+  const overlayDismiss = useOverlayDismiss(() => setTodoPopupOpen(false));
 
   if (!isTodoPopupOpen) return null;
 
@@ -63,7 +68,7 @@ function TodoPopup() {
   const close = () => setTodoPopupOpen(false);
 
   return (
-    <div className="lab-popup-overlay lab-popup-overlay--top-anchored" onClick={close}>
+    <div className="lab-popup-overlay lab-popup-overlay--top-anchored" {...overlayDismiss}>
       <div className="lab-popup todo-popup" onClick={(e) => e.stopPropagation()}>
         <div className="lab-popup-header">
           <span className="lab-popup-title">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import { AdditionalUrl } from '../../../shared/types';
 import './AddItemForm.css';
 
@@ -109,8 +110,10 @@ function AddItemForm({ dayId, sectionId, onClose }: AddItemFormProps) {
     setMultiLinks(prev => prev.filter((_, i) => i !== index));
   };
 
+  const overlayDismiss = useOverlayDismiss(onClose);
+
   return (
-    <div className="add-item-overlay" onClick={onClose}>
+    <div className="add-item-overlay" {...overlayDismiss}>
     <div className="add-item-form" onClick={(e) => e.stopPropagation()}>
       <div className="add-item-type-selector">
         <button

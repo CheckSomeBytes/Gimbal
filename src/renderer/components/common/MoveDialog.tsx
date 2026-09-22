@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import './MoveDialog.css';
 
 interface MoveDialogProps {
@@ -29,8 +30,10 @@ function MoveDialog({ onClose, hasItems, hasSections }: MoveDialogProps) {
 
   const canConfirm = selectedDayId && (!hasItems || selectedSectionId);
 
+  const overlayDismiss = useOverlayDismiss(onClose);
+
   return (
-    <div className="move-dialog-overlay" onClick={onClose}>
+    <div className="move-dialog-overlay" {...overlayDismiss}>
       <div className="move-dialog" onClick={(e) => e.stopPropagation()}>
         <h3 className="move-dialog-title">MOVE TO</h3>
 

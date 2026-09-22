@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import { TIMEZONES, ScheduledTime, Link, Note } from '../../../shared/types';
 import TodoPopup from '../Todo/TodoPopup';
 import MarkdownEditor from '../Markdown/MarkdownEditor';
@@ -191,6 +192,14 @@ function Header() {
     { emoji: '', text: '' },
   ]);
   const [quickPollAnonymous, setQuickPollAnonymous] = useState(true);
+
+  // Backdrop dismissal for each popup. Dragging from inside a popup out over
+  // the backdrop must not close it, so these ignore drags that began inside.
+  const labPopupDismiss = useOverlayDismiss(() => setShowLabPopup(false));
+  const labNotesDismiss = useOverlayDismiss(() => setOpenLabNotesLabNumber(null));
+  const timeEstimateDismiss = useOverlayDismiss(() => setShowTimeEstimatePopup(false));
+  const quickPollDismiss = useOverlayDismiss(() => setShowQuickPollPopup(false));
+  const searchDismiss = useOverlayDismiss(() => setShowSearchPopup(false));
   const [showQuickPollSaveDropdown, setShowQuickPollSaveDropdown] = useState(false);
   const [quickPollSaveTitle, setQuickPollSaveTitle] = useState('');
   const [quickPollSaveDayId, setQuickPollSaveDayId] = useState('');
@@ -900,7 +909,7 @@ function Header() {
 
       {/* Lab Poll Popup */}
       {showLabPopup && (
-        <div className="lab-popup-overlay" onClick={() => setShowLabPopup(false)}>
+        <div className="lab-popup-overlay" {...labPopupDismiss}>
           <div className="lab-popup" onClick={(e) => e.stopPropagation()}>
             <div className="lab-popup-header">
               <span className="lab-popup-title">LAB POLL</span>
@@ -1090,7 +1099,7 @@ function Header() {
 
       {/* Lab Notes Popup */}
       {openLabNotesLabNumber && (
-        <div className="lab-popup-overlay lab-popup-overlay--top-anchored" onClick={() => setOpenLabNotesLabNumber(null)}>
+        <div className="lab-popup-overlay lab-popup-overlay--top-anchored" {...labNotesDismiss}>
           <div className="lab-popup lab-popup--notes" onClick={(e) => e.stopPropagation()}>
             <div className="lab-popup-header">
               <span className="lab-popup-title">Lab {openLabNotesLabNumber} Notes</span>
@@ -1138,7 +1147,7 @@ function Header() {
 
       {/* Time Estimate Popup */}
       {showTimeEstimatePopup && (
-        <div className="lab-popup-overlay lab-popup-overlay--top-anchored" onClick={() => setShowTimeEstimatePopup(false)}>
+        <div className="lab-popup-overlay lab-popup-overlay--top-anchored" {...timeEstimateDismiss}>
           <div className="lab-popup" onClick={(e) => e.stopPropagation()}>
             <div className="lab-popup-header">
               <span className="lab-popup-title">LAUNCH TIMER</span>
@@ -1298,7 +1307,7 @@ function Header() {
 
       {/* Quick Poll Popup */}
       {showQuickPollPopup && (
-        <div className="lab-popup-overlay" onClick={() => setShowQuickPollPopup(false)}>
+        <div className="lab-popup-overlay" {...quickPollDismiss}>
           <div className="lab-popup quick-poll-popup" onClick={(e) => { e.stopPropagation(); setQuickPollEmojiPickerIndex(null); }}>
             <div className="lab-popup-header">
               <span className="lab-popup-title">QUICK POLL</span>
@@ -1536,7 +1545,7 @@ function Header() {
 
       {/* Search Popup */}
       {showSearchPopup && (
-        <div className="lab-popup-overlay" onClick={() => setShowSearchPopup(false)}>
+        <div className="lab-popup-overlay" {...searchDismiss}>
           <div className="search-popup" onClick={(e) => e.stopPropagation()}>
             <div className="lab-popup-header">
               <span className="lab-popup-title">SEARCH</span>
