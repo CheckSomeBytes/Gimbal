@@ -219,6 +219,9 @@ function Header() {
   // The countdown window has its own text-size buttons; persist whatever size
   // the instructor lands on so the next timer opens at that size.
   useEffect(() => {
+    // Guard the bridge: if the preload ever fails to load, a bare call here
+    // throws during render and blanks the entire window instead of degrading.
+    if (!window.electronAPI?.onTimerTextScaleChanged) return;
     return window.electronAPI.onTimerTextScaleChanged((scale) => {
       updateSettings({ timerTextScale: scale });
     });
