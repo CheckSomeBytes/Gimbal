@@ -28,6 +28,25 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Smoke test (boot the built app)
+        shell: pwsh
+        env:
+          ELECTRON_DISABLE_GPU: 1
+        run: |
+          # A build that compiles can still fail to start: a preload that does
+          # not load leaves window.electronAPI undefined and the window blank,
+          # which shipped in v1.6.0-beta.2. Boot the real app and check it.
+          #
+          # Electron's teardown can mask the process exit code, so the script
+          # prints an explicit marker and we assert on that instead.
+          $output = npm run smoke 2>&1 | Out-String
+          Write-Host $output
+          if ($output -notmatch 'SMOKE TEST EXIT 0') {
+            Write-Error "Smoke test failed - the built app did not boot cleanly"
+            exit 1
+          }
+          Write-Host "Smoke test passed - app boots with its IPC bridge intact"
+
       - name: Package application (test)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
