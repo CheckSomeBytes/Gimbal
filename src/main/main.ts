@@ -910,11 +910,22 @@ function setupIPC(): void {
         danger: string;
         fontFamily: string;
         border?: string;
+        textScale?: number;
       }
     ) => {
       return openCountdownTimer(totalMinutes, message, theme);
     }
   );
+
+  // The countdown window resizes its own text; forward the new scale to the
+  // main window so it can persist it to the active profile.
+  ipcMain.on(IPC_CHANNELS.TIMER_SET_TEXT_SCALE, (_, scale: number) => {
+    if (typeof scale !== 'number' || !isFinite(scale)) return;
+    const clamped = Math.min(2, Math.max(0.5, scale));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_CHANNELS.TIMER_TEXT_SCALE_CHANGED, clamped);
+    }
+  });
 
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
     app.quit();
@@ -1097,6 +1108,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        preload: join(__dirname, '../preload/countdownPreload.js'),
       },
     });
 
@@ -1118,6 +1130,9 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       border-radius: 0;
       overflow: hidden;
       background: transparent;
+    }
+    :root {
+      --text-scale: ${textScale};
     }
     body {
       font-family: ${theme.fontFamily};
@@ -1189,6 +1204,51 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       border-color: ${theme.accent};
       color: ${theme.accent};
     }
+    .size-controls {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    body:hover .size-controls {
+      opacity: 1;
+    }
+    .size-btn {
+      background: ${theme.background};
+      border: 2px solid ${theme.textMuted};
+      color: ${theme.textMuted};
+      font-family: ${theme.fontFamily};
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+    }
+    .size-btn--up { font-size: 15px; }
+    .size-btn--down { font-size: 10px; }
+    .size-btn:hover:not(:disabled) {
+      border-color: ${theme.accent};
+      color: ${theme.accent};
+    }
+    .size-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .size-readout {
+      font-family: ${theme.fontFamily};
+      font-size: 8px;
+      color: ${theme.textMuted};
+      white-space: nowrap;
+    }
     .message-container {
       display: flex;
       flex-direction: column;
@@ -1201,9 +1261,9 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       margin-bottom: min(2vh, 14px);
       max-width: 100%;
     }
-    .message { font-size: calc(${theme.fontFamily.includes('Lexend') || theme.fontFamily.includes('sans-serif') || theme.fontFamily === 'sans-serif' ? 'min(5.5vw, 8.5vh)' : 'min(4vw, 6vh)'} * ${textScale}); color: ${theme.text}; word-wrap: break-word; line-height: 1.35; text-align: center; }
+    .message { font-size: calc(${theme.fontFamily.includes('Lexend') || theme.fontFamily.includes('sans-serif') || theme.fontFamily === 'sans-serif' ? 'min(5.5vw, 8.5vh)' : 'min(4vw, 6vh)'} * var(--text-scale)); color: ${theme.text}; word-wrap: break-word; line-height: 1.35; text-align: center; }
     .message-line { display: block; }
-    .message-separator { color: ${theme.textMuted}; font-size: calc(min(3.5vw, 5vh) * ${textScale}); }
+    .message-separator { color: ${theme.textMuted}; font-size: calc(min(3.5vw, 5vh) * var(--text-scale)); }
     .message-edit-btn {
       background: ${theme.background};
       border: 2px solid ${theme.textMuted};
@@ -1240,7 +1300,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       /* Scales with the window so the timer stays readable when the
          window is resized or the display is projected. At large scales the
          flex layout shrinks this to fit rather than letting it overflow. */
-      font-size: calc(min(22vw, 34vh) * ${textScale});
+      font-size: calc(min(22vw, 34vh) * var(--text-scale));
       line-height: 1.05;
       font-weight: bold;
       flex-shrink: 1;
@@ -1261,14 +1321,51 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     <button class="time-btn" onclick="adjustTime(60)" title="Add 1 minute">+</button>
     <button class="time-btn" onclick="adjustTime(-60)" title="Remove 1 minute">−</button>
   </div>
+  <div class="size-controls">
+    <button class="size-btn size-btn--up" id="sizeUp" onclick="adjustTextScale(0.1)" title="Increase text size">A</button>
+    <span class="size-readout" id="sizeReadout">100%</span>
+    <button class="size-btn size-btn--down" id="sizeDown" onclick="adjustTextScale(-0.1)" title="Decrease text size">A</button>
+  </div>
   <div class="message-container" id="messageContainer">
     <div class="message" id="message">${escapedMessage.replace(/ \+ /g, '</span><span class="message-separator">+</span><span class="message-line">').replace(/^/, '<span class="message-line">').replace(/$/, '</span>')}</div>
     <button class="message-edit-btn" onclick="editMessage()" title="Edit message">✎</button>
   </div>
   <div class="timer" id="timer">00:00</div>
   <script>
+    // Track a wall-clock deadline rather than counting ticks. Timers in a
+    // background window get throttled or suspended outright (most visibly when
+    // the machine is locked or sleeping), so a tick-counting timer silently
+    // loses that time and resumes where it left off. Deriving the remaining
+    // time from Date.now() means the countdown is correct the moment the
+    // window is visible again, however long it was starved.
+    var deadline = Date.now() + ${totalSeconds} * 1000;
     var remaining = ${totalSeconds};
+    function computeRemaining() {
+      return Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    }
     var isEditing = false;
+    var MIN_SCALE = 0.5;
+    var MAX_SCALE = 2;
+    var textScale = ${textScale};
+    function applyTextScale() {
+      document.documentElement.style.setProperty('--text-scale', String(textScale));
+      document.getElementById('sizeReadout').textContent = Math.round(textScale * 100) + '%';
+      document.getElementById('sizeUp').disabled = textScale >= MAX_SCALE - 0.001;
+      document.getElementById('sizeDown').disabled = textScale <= MIN_SCALE + 0.001;
+    }
+    function adjustTextScale(delta) {
+      // Round to the nearest step so repeated clicks can't drift off 10% marks.
+      var next = Math.round((textScale + delta) * 10) / 10;
+      next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+      if (next === textScale) return;
+      textScale = next;
+      applyTextScale();
+      // Persist to the active profile so the next timer opens at this size.
+      if (window.countdownAPI) {
+        window.countdownAPI.setTextScale(textScale);
+      }
+    }
+    applyTextScale();
     function editMessage() {
       if (isEditing) return;
       isEditing = true;
@@ -1299,16 +1396,19 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     }
     var timerRunning = true;
     function adjustTime(seconds) {
-      remaining += seconds;
-      if (remaining < 0) remaining = 0;
+      // Re-base on the current remaining time so an adjustment made after the
+      // timer hit 00:00 counts from now, not from an already-past deadline.
+      var base = Math.max(0, computeRemaining());
+      deadline = Date.now() + Math.max(0, base + seconds) * 1000;
       var wasRunning = timerRunning;
       timerRunning = true;
       updateDisplay();
-      if (!wasRunning && remaining > 0) {
-        setTimeout(updateTimer, 1000);
+      if (!wasRunning) {
+        startTicking();
       }
     }
     function updateDisplay() {
+      remaining = computeRemaining();
       var hours = Math.floor(remaining / 3600);
       var minutes = Math.floor((remaining % 3600) / 60);
       var seconds = remaining % 60;
@@ -1334,14 +1434,36 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
         timerEl.classList.add('warning');
       }
     }
-    function updateTimer() {
+    var tickHandle = null;
+    function tick() {
       updateDisplay();
-      if (timerRunning && remaining > 0) {
-        remaining--;
-        setTimeout(updateTimer, 1000);
+      if (!timerRunning || remaining <= 0) {
+        stopTicking();
+        return;
+      }
+      // Re-align to the next whole second. A fixed 1000ms interval drifts
+      // against the deadline and can skip or repeat a displayed second.
+      tickHandle = setTimeout(tick, ((deadline - Date.now()) % 1000 + 1000) % 1000 || 1000);
+    }
+    function stopTicking() {
+      if (tickHandle !== null) {
+        clearTimeout(tickHandle);
+        tickHandle = null;
       }
     }
-    updateTimer();
+    function startTicking() {
+      stopTicking();
+      tick();
+    }
+    // A throttled window may not run a pending timeout at all while hidden, so
+    // recompute as soon as it is shown or the machine wakes up.
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && timerRunning) startTicking();
+    });
+    window.addEventListener('focus', function() {
+      if (timerRunning) startTicking();
+    });
+    startTicking();
   </script>
 </body>
 </html>`;

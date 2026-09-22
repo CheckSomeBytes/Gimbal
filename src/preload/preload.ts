@@ -85,6 +85,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.OPEN_COUNTDOWN_TIMER, totalMinutes, message, theme);
   },
 
+  onTimerTextScaleChanged: (callback: (scale: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, scale: number) => callback(scale);
+    ipcRenderer.on(IPC_CHANNELS.TIMER_TEXT_SCALE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TIMER_TEXT_SCALE_CHANGED, handler);
+  },
+
   quitApp: (): Promise<void> => {
     return ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP);
   },
@@ -207,6 +213,7 @@ declare global {
           textScale?: number;
         }
       ) => Promise<boolean>;
+      onTimerTextScaleChanged: (callback: (scale: number) => void) => () => void;
       quitApp: () => Promise<void>;
       minimizeApp: () => Promise<void>;
       checkForUpdates: () => Promise<{

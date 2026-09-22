@@ -194,6 +194,8 @@ export const IPC_CHANNELS = {
   FOCUS_AND_PASTE: 'window:focus-paste',
   GET_WINDOWS: 'window:get-list',
   OPEN_COUNTDOWN_TIMER: 'window:open-countdown',
+  TIMER_SET_TEXT_SCALE: 'timer:set-text-scale',
+  TIMER_TEXT_SCALE_CHANGED: 'timer:text-scale-changed',
 
   // App
   GET_APP_PATH: 'app:get-path',

@@ -18,7 +18,8 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          preload: resolve(__dirname, 'src/preload/preload.ts')
+          preload: resolve(__dirname, 'src/preload/preload.ts'),
+          countdownPreload: resolve(__dirname, 'src/preload/countdownPreload.ts')
         }
       }
     }

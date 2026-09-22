@@ -216,6 +216,14 @@ function Header() {
     return () => clearInterval(timer);
   }, []);
 
+  // The countdown window has its own text-size buttons; persist whatever size
+  // the instructor lands on so the next timer opens at that size.
+  useEffect(() => {
+    return window.electronAPI.onTimerTextScaleChanged((scale) => {
+      updateSettings({ timerTextScale: scale });
+    });
+  }, [updateSettings]);
+
   // Sync lab notes text when opening a lab notes popup
   useEffect(() => {
     if (openLabNotesLabNumber) {
