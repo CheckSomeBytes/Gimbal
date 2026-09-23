@@ -442,6 +442,35 @@ function Header() {
     }
   };
 
+  // Colours and settings passed to the countdown window. Includes the break
+  // alert theme so the timer turns red near the end, like the main window.
+  const getTimerTheme = () => {
+    const { theme, breakAlertTheme, timerFontFamily, timerTextScale } = currentProfile.settings;
+    return {
+      background: theme.colors.background,
+      text: theme.colors.text,
+      textMuted: theme.colors.textMuted,
+      accent: theme.colors.accent,
+      success: theme.colors.success,
+      danger: theme.colors.danger,
+      fontFamily: timerFontFamily || theme.fontFamily,
+      border: theme.colors.border,
+      textScale: timerTextScale,
+      alert: breakAlertTheme
+        ? {
+            background: breakAlertTheme.colors.background,
+            text: breakAlertTheme.colors.text,
+            textMuted: breakAlertTheme.colors.textMuted,
+            accent: breakAlertTheme.colors.accent,
+            danger: breakAlertTheme.colors.danger,
+            border: breakAlertTheme.colors.border,
+          }
+        : null,
+      alertMinutes: breakAlertMinutes,
+      timezone,
+    };
+  };
+
   const handleOpenCountdownTimer = async () => {
     const { totalMinutes, timerMessage } = calculateReturnTime();
 
@@ -450,18 +479,7 @@ function Header() {
       return;
     }
 
-    const theme = currentProfile.settings.theme;
-    await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, {
-      background: theme.colors.background,
-      text: theme.colors.text,
-      textMuted: theme.colors.textMuted,
-      accent: theme.colors.accent,
-      success: theme.colors.success,
-      danger: theme.colors.danger,
-      fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
-      border: theme.colors.border,
-      textScale: currentProfile.settings.timerTextScale,
-    });
+    await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme());
     addNotification('Countdown timer opened!', 'success');
   };
 
@@ -493,18 +511,7 @@ function Header() {
       setShowTimeEstimatePopup(false);
 
       // Open the countdown timer
-      const theme = currentProfile.settings.theme;
-      await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, {
-        background: theme.colors.background,
-        text: theme.colors.text,
-        textMuted: theme.colors.textMuted,
-        accent: theme.colors.accent,
-        success: theme.colors.success,
-        danger: theme.colors.danger,
-        fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
-        border: theme.colors.border,
-        textScale: currentProfile.settings.timerTextScale,
-      });
+      await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme());
 
       addNotification('Time estimate sent and timer opened!', 'success');
     } else {
@@ -520,18 +527,7 @@ function Header() {
     }
 
     const message = customTimerMessage.trim() || `${formatDuration(minutes)} Timer`;
-    const theme = currentProfile.settings.theme;
-    await window.electronAPI.openCountdownTimer(minutes, message, {
-      background: theme.colors.background,
-      text: theme.colors.text,
-      textMuted: theme.colors.textMuted,
-      accent: theme.colors.accent,
-      success: theme.colors.success,
-      danger: theme.colors.danger,
-      fontFamily: currentProfile.settings.timerFontFamily || theme.fontFamily,
-      border: theme.colors.border,
-      textScale: currentProfile.settings.timerTextScale,
-    });
+    await window.electronAPI.openCountdownTimer(minutes, message, getTimerTheme());
     addNotification('Countdown timer opened!', 'success');
     setShowTimeEstimatePopup(false);
   };

@@ -80,6 +80,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       fontFamily: string;
       border?: string;
       textScale?: number;
+      alert?: {
+        background: string;
+        text: string;
+        textMuted: string;
+        accent: string;
+        danger: string;
+        border?: string;
+      } | null;
+      alertMinutes?: number;
+      timezone?: string;
     }
   ): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.OPEN_COUNTDOWN_TIMER, totalMinutes, message, theme);
@@ -211,6 +221,16 @@ declare global {
           fontFamily: string;
           border?: string;
           textScale?: number;
+          alert?: {
+            background: string;
+            text: string;
+            textMuted: string;
+            accent: string;
+            danger: string;
+            border?: string;
+          } | null;
+          alertMinutes?: number;
+          timezone?: string;
         }
       ) => Promise<boolean>;
       onTimerTextScaleChanged: (callback: (scale: number) => void) => () => void;

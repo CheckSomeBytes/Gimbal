@@ -901,17 +901,7 @@ function setupIPC(): void {
       _,
       totalMinutes: number,
       message: string,
-      theme: {
-        background: string;
-        text: string;
-        textMuted: string;
-        accent: string;
-        success: string;
-        danger: string;
-        fontFamily: string;
-        border?: string;
-        textScale?: number;
-      }
+      theme: TimerTheme
     ) => {
       return openCountdownTimer(totalMinutes, message, theme);
     }
@@ -1082,6 +1072,21 @@ interface TimerTheme {
   border?: string;
   /** Text size multiplier for the countdown window; 1 = default. */
   textScale?: number;
+  /** Profile's break alert theme; the window switches to it near the end. */
+  alert?: TimerAlertColors | null;
+  /** Minutes remaining at which the alert theme kicks in. */
+  alertMinutes?: number;
+  /** IANA timezone used to display the return time. */
+  timezone?: string;
+}
+
+interface TimerAlertColors {
+  background: string;
+  text: string;
+  textMuted: string;
+  accent: string;
+  danger: string;
+  border?: string;
 }
 
 // Open a countdown timer window
@@ -1116,6 +1121,19 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     const totalSeconds = totalMinutes * 60;
     // Clamp: a stored value outside this range would make the window unusable.
     const textScale = Math.min(2, Math.max(0.5, theme.textScale || 1));
+    const alertSeconds = Math.max(0, theme.alertMinutes || 5) * 60;
+    const alert = theme.alert;
+    // Validate before embedding in a script: an invalid zone makes
+    // toLocaleTimeString throw and would stop the timer from ticking.
+    let timezone: string | undefined;
+    try {
+      if (theme.timezone) {
+        new Intl.DateTimeFormat('en-US', { timeZone: theme.timezone });
+        timezone = theme.timezone;
+      }
+    } catch {
+      timezone = undefined;
+    }
     const escapedMessage = message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
     const htmlContent = `<!DOCTYPE html>
@@ -1133,11 +1151,29 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     }
     :root {
       --text-scale: ${textScale};
+      --bg: ${theme.background};
+      --text: ${theme.text};
+      --text-muted: ${theme.textMuted};
+      --accent: ${theme.accent};
+      --danger: ${theme.danger};
+      --success: ${theme.success};
+      --border: ${theme.border || theme.accent};
     }
+${alert ? `    /* Mirrors the main window's break alert theme near the end. */
+    body.alert {
+      --bg: ${alert.background};
+      --text: ${alert.text};
+      --text-muted: ${alert.textMuted};
+      --accent: ${alert.accent};
+      --danger: ${alert.danger};
+      --border: ${alert.border || alert.accent};
+    }
+    body.alert .timer { color: var(--text); }
+` : ''}
     body {
       font-family: ${theme.fontFamily};
-      background: ${theme.background};
-      color: ${theme.text};
+      background: var(--bg);
+      color: var(--text);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -1147,7 +1183,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       text-align: center;
       position: relative;
       -webkit-app-region: drag;
-      border: 2px solid ${theme.border || theme.accent};
+      border: 2px solid var(--border);
     }
     button, input, .message-container {
       -webkit-app-region: no-drag;
@@ -1158,7 +1194,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       right: 10px;
       background: none;
       border: 2px solid transparent;
-      color: ${theme.textMuted};
+      color: var(--text-muted);
       font-family: ${theme.fontFamily};
       font-size: 10px;
       cursor: pointer;
@@ -1170,8 +1206,8 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       opacity: 1;
     }
     .close-btn:hover {
-      color: ${theme.danger};
-      border-color: ${theme.danger};
+      color: var(--danger);
+      border-color: var(--danger);
     }
     .time-controls {
       position: absolute;
@@ -1188,9 +1224,9 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       opacity: 1;
     }
     .time-btn {
-      background: ${theme.background};
-      border: 2px solid ${theme.textMuted};
-      color: ${theme.textMuted};
+      background: var(--bg);
+      border: 2px solid var(--text-muted);
+      color: var(--text-muted);
       font-family: ${theme.fontFamily};
       font-size: 16px;
       width: 28px;
@@ -1201,8 +1237,8 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       justify-content: center;
     }
     .time-btn:hover {
-      border-color: ${theme.accent};
-      color: ${theme.accent};
+      border-color: var(--accent);
+      color: var(--accent);
     }
     .size-controls {
       position: absolute;
@@ -1220,9 +1256,9 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       opacity: 1;
     }
     .size-btn {
-      background: ${theme.background};
-      border: 2px solid ${theme.textMuted};
-      color: ${theme.textMuted};
+      background: var(--bg);
+      border: 2px solid var(--text-muted);
+      color: var(--text-muted);
       font-family: ${theme.fontFamily};
       width: 28px;
       height: 28px;
@@ -1236,8 +1272,8 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     .size-btn--up { font-size: 15px; }
     .size-btn--down { font-size: 10px; }
     .size-btn:hover:not(:disabled) {
-      border-color: ${theme.accent};
-      color: ${theme.accent};
+      border-color: var(--accent);
+      color: var(--accent);
     }
     .size-btn:disabled {
       opacity: 0.35;
@@ -1246,7 +1282,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     .size-readout {
       font-family: ${theme.fontFamily};
       font-size: 8px;
-      color: ${theme.textMuted};
+      color: var(--text-muted);
       white-space: nowrap;
     }
     .message-container {
@@ -1261,13 +1297,13 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       margin-bottom: min(2vh, 14px);
       max-width: 100%;
     }
-    .message { font-size: calc(${theme.fontFamily.includes('Lexend') || theme.fontFamily.includes('sans-serif') || theme.fontFamily === 'sans-serif' ? 'min(5.5vw, 8.5vh)' : 'min(4vw, 6vh)'} * var(--text-scale)); color: ${theme.text}; word-wrap: break-word; line-height: 1.35; text-align: center; }
+    .message { font-size: calc(${theme.fontFamily.includes('Lexend') || theme.fontFamily.includes('sans-serif') || theme.fontFamily === 'sans-serif' ? 'min(5.5vw, 8.5vh)' : 'min(4vw, 6vh)'} * var(--text-scale)); color: var(--text); word-wrap: break-word; line-height: 1.35; text-align: center; }
     .message-line { display: block; }
-    .message-separator { color: ${theme.textMuted}; font-size: calc(min(3.5vw, 5vh) * var(--text-scale)); }
+    .message-separator { color: var(--text-muted); font-size: calc(min(3.5vw, 5vh) * var(--text-scale)); }
     .message-edit-btn {
-      background: ${theme.background};
-      border: 2px solid ${theme.textMuted};
-      color: ${theme.textMuted};
+      background: var(--bg);
+      border: 2px solid var(--text-muted);
+      color: var(--text-muted);
       font-family: ${theme.fontFamily};
       font-size: 10px;
       padding: 2px 6px;
@@ -1280,15 +1316,15 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       opacity: 1;
     }
     .message-edit-btn:hover {
-      border-color: ${theme.accent};
-      color: ${theme.accent};
+      border-color: var(--accent);
+      color: var(--accent);
     }
     .message-input {
       font-family: ${theme.fontFamily};
       font-size: 10px;
-      color: ${theme.text};
-      background: ${theme.background};
-      border: 2px solid ${theme.accent};
+      color: var(--text);
+      background: var(--bg);
+      border: 2px solid var(--accent);
       padding: 8px;
       width: 300px;
       text-align: center;
@@ -1306,12 +1342,21 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
       flex-shrink: 1;
       min-height: 0;
       white-space: nowrap;
-      color: ${theme.accent};
+      color: var(--accent);
+      font-family: ${theme.fontFamily};
+    }
+    .return-time {
+      font-size: calc(min(4vw, 6vh) * var(--text-scale));
+      line-height: 1.35;
+      margin-top: min(2vh, 14px);
+      flex-shrink: 0;
+      white-space: nowrap;
+      color: var(--text);
       font-family: ${theme.fontFamily};
     }
     .timer.warning { color: #ffd93d; }
-    .timer.danger { color: ${theme.danger}; animation: pulse 1s ease-in-out infinite; }
-    .timer.done { color: ${theme.success}; }
+    .timer.danger { color: var(--danger); animation: pulse 1s ease-in-out infinite; }
+    .timer.done { color: var(--success); }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   </style>
 </head>
@@ -1331,6 +1376,7 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     <button class="message-edit-btn" onclick="editMessage()" title="Edit message">✎</button>
   </div>
   <div class="timer" id="timer">00:00</div>
+  <div class="return-time" id="returnTime"></div>
   <script>
     // Track a wall-clock deadline rather than counting ticks. Timers in a
     // background window get throttled or suspended outright (most visibly when
@@ -1342,6 +1388,20 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
     var remaining = ${totalSeconds};
     function computeRemaining() {
       return Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    }
+    var ALERT_SECONDS = ${alertSeconds};
+    var HAS_ALERT_THEME = ${alert ? 'true' : 'false'};
+    var TIMEZONE = ${timezone ? JSON.stringify(timezone) : 'undefined'};
+    var lastReturnDeadline = null;
+    function updateReturnTime() {
+      if (deadline === lastReturnDeadline) return;
+      lastReturnDeadline = deadline;
+      var opts = { hour: 'numeric', minute: '2-digit', hour12: true };
+      if (TIMEZONE) opts.timeZone = TIMEZONE;
+      // Formatted the same way as the "Back at approximately" chat message so
+      // the two always agree.
+      var backAt = new Date(deadline);
+      document.getElementById('returnTime').textContent = 'Back at ' + backAt.toLocaleTimeString('en-US', opts);
     }
     var isEditing = false;
     var MIN_SCALE = 0.5;
@@ -1421,6 +1481,11 @@ function openCountdownTimer(totalMinutes: number, message: string, theme: TimerT
         // 59:59 or less - show MM:SS
         timerEl.textContent = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
       }
+
+      updateReturnTime();
+      // Same rule as the main window: alert theme while within the alert
+      // window, back to normal once time is up.
+      document.body.classList.toggle('alert', HAS_ALERT_THEME && remaining > 0 && remaining <= ALERT_SECONDS);
 
       timerEl.className = 'timer';
       if (remaining <= 0) {
