@@ -5,6 +5,7 @@ import { TIMEZONES, ScheduledTime, Link, Note } from '../../../shared/types';
 import TodoPopup from '../Todo/TodoPopup';
 import MarkdownEditor from '../Markdown/MarkdownEditor';
 import { markdownToPlainText } from '../Markdown/markdown';
+import { buildEvalUrl } from '../../../shared/evalLinks';
 import iconBrowser from '../../assets/icon-browser.png';
 import iconSlack from '../../assets/icon-slack.png';
 import './Header.css';
@@ -442,6 +443,13 @@ function Header() {
     }
   };
 
+  // The selected day's eval, derived from its Day# so the QR code can only
+  // ever point at that day's evaluation. No Day#, no QR.
+  const getEvalLink = () => {
+    const url = buildEvalUrl(currentProfile.settings.evalTemplateUrl, currentDay?.dayNumber);
+    return url && currentDay?.dayNumber ? { url, dayNumber: currentDay.dayNumber } : null;
+  };
+
   // Colours and settings passed to the countdown window. Includes the break
   // alert theme so the timer turns red near the end, like the main window.
   const getTimerTheme = () => {
@@ -468,6 +476,7 @@ function Header() {
         : null,
       alertMinutes: breakAlertMinutes,
       timezone,
+      evalLink: getEvalLink(),
     };
   };
 

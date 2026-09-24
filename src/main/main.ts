@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { createHash } from 'crypto';
+import QRCode from 'qrcode';
 import {
   AppConfig,
   DEFAULT_CONFIG,
@@ -903,7 +904,8 @@ function setupIPC(): void {
       message: string,
       theme: TimerTheme
     ) => {
-      return openCountdownTimer(totalMinutes, message, theme);
+      const evalQrSvg = await buildEvalQrSvg(theme.evalLink);
+      return openCountdownTimer(totalMinutes, message, theme, evalQrSvg);
     }
   );
 
@@ -1078,6 +1080,8 @@ interface TimerTheme {
   alertMinutes?: number;
   /** IANA timezone used to display the return time. */
   timezone?: string;
+  /** Today's course eval, shown as a QR code the instructor can toggle. */
+  evalLink?: { url: string; dayNumber: number } | null;
 }
 
 interface TimerAlertColors {
@@ -1089,8 +1093,31 @@ interface TimerAlertColors {
   border?: string;
 }
 
+// Render the eval link as an inline SVG QR code for the countdown window.
+async function buildEvalQrSvg(evalLink: TimerTheme['evalLink']): Promise<string | null> {
+  if (!evalLink || !/^https?:\/\//i.test(evalLink.url)) return null;
+  try {
+    // Always dark-on-white: phone scanners struggle with inverted or
+    // low-contrast codes, so this deliberately ignores the theme.
+    return await QRCode.toString(evalLink.url, {
+      type: 'svg',
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+  } catch (error) {
+    console.error('Error generating eval QR code:', error);
+    return null;
+  }
+}
+
 // Open a countdown timer window
-function openCountdownTimer(totalMinutes: number, message: string, theme: TimerTheme): boolean {
+function openCountdownTimer(
+  totalMinutes: number,
+  message: string,
+  theme: TimerTheme,
+  evalQrSvg: string | null = null
+): boolean {
   try {
     // Close existing countdown window if open
     if (countdownWindow && !countdownWindow.isDestroyed()) {
@@ -1185,8 +1212,78 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       -webkit-app-region: drag;
       border: 2px solid var(--border);
     }
-    button, input, .message-container {
+    button, input, .message-container, .qr-panel {
       -webkit-app-region: no-drag;
+    }
+    /* Keep the hover controls above the timer text: the text is later in the
+       DOM and on its own compositing layer, so it would otherwise paint over
+       them and swallow the clicks once it grows large enough to overlap. */
+    .close-btn, .qr-btn, .time-controls, .size-controls {
+      z-index: 10;
+    }
+    .timer-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+      max-height: 100%;
+      max-width: 100%;
+      flex-shrink: 1;
+    }
+    .qr-btn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: var(--bg);
+      border: 2px solid var(--text-muted);
+      color: var(--text-muted);
+      font-family: ${theme.fontFamily};
+      font-size: 10px;
+      cursor: pointer;
+      padding: 4px 8px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    body:hover .qr-btn, body.qr-on .qr-btn {
+      opacity: 1;
+    }
+    .qr-btn:hover, body.qr-on .qr-btn {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    /* QR shown: timer and code sit side by side, and the timer text shrinks
+       to share the width. */
+    body.qr-on {
+      flex-direction: row;
+      gap: 4vw;
+    }
+    body.qr-on .timer { font-size: calc(min(10vw, 34vh) * var(--text-scale)); }
+    body.qr-on .message { font-size: calc(min(2.6vw, 6vh) * var(--text-scale)); }
+    body.qr-on .return-time { font-size: calc(min(2.2vw, 6vh) * var(--text-scale)); }
+    .qr-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+      /* Fixed light card so the code scans the same on every theme. */
+      background: #ffffff;
+      color: #000000;
+      padding: min(1.5vh, 10px);
+    }
+    body.qr-on .qr-panel {
+      display: flex;
+    }
+    .qr-code svg {
+      display: block;
+      width: min(70vh, 38vw);
+      height: min(70vh, 38vw);
+    }
+    .qr-label {
+      font-family: ${theme.fontFamily};
+      font-size: min(2.2vw, 3.5vh);
+      margin-top: min(1vh, 6px);
+      white-space: nowrap;
     }
     .close-btn {
       position: absolute;
@@ -1367,7 +1464,8 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
 </head>
 <body>
   <button class="close-btn" onclick="window.close()" title="Close">X</button>
-  <div class="time-controls">
+${evalQrSvg && theme.evalLink ? `  <button class="qr-btn" onclick="toggleQr()" title="Show or hide the Day ${theme.evalLink.dayNumber} eval QR code">QR</button>
+` : ''}  <div class="time-controls">
     <button class="time-btn" onclick="adjustTime(60)" title="Add 1 minute">+</button>
     <button class="time-btn" onclick="adjustTime(-60)" title="Remove 1 minute">−</button>
   </div>
@@ -1376,13 +1474,19 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
     <span class="size-readout" id="sizeReadout">100%</span>
     <button class="size-btn size-btn--down" id="sizeDown" onclick="adjustTextScale(-0.1)" title="Decrease text size">A</button>
   </div>
+  <div class="timer-content">
   <div class="message-container" id="messageContainer">
     <div class="message" id="message">${escapedMessage.replace(/ \+ /g, '</span><span class="message-separator">+</span><span class="message-line">').replace(/^/, '<span class="message-line">').replace(/$/, '</span>')}</div>
     <button class="message-edit-btn" onclick="editMessage()" title="Edit message">✎</button>
   </div>
   <div class="timer" id="timer">00:00</div>
   <div class="return-time" id="returnTime"></div>
-  <script>
+  </div>
+${evalQrSvg && theme.evalLink ? `  <div class="qr-panel">
+    <div class="qr-code">${evalQrSvg}</div>
+    <div class="qr-label">Day ${theme.evalLink.dayNumber} Evaluation</div>
+  </div>
+` : ''}  <script>
     // Track a wall-clock deadline rather than counting ticks. Timers in a
     // background window get throttled or suspended outright (most visibly when
     // the machine is locked or sleeping), so a tick-counting timer silently
@@ -1407,6 +1511,9 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       // the two always agree.
       var backAt = new Date(deadline);
       document.getElementById('returnTime').textContent = 'Back at ' + backAt.toLocaleTimeString('en-US', opts);
+    }
+    function toggleQr() {
+      document.body.classList.toggle('qr-on');
     }
     var isEditing = false;
     var MIN_SCALE = 0.5;

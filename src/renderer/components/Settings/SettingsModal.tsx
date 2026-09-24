@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import { DEFAULT_THEME, Theme, ThemeColors, PRESET_THEMES, TIMEZONES, ScheduledTime, FontSize, BackupMetadata } from '../../../shared/types';
+import { parseEvalTemplate, buildEvalUrl } from '../../../shared/evalLinks';
 import './SettingsModal.css';
 
 type SettingsTab = 'general' | 'profiles' | 'days' | 'theme' | 'system';
@@ -974,6 +975,57 @@ function SettingsModal() {
                   <p className="settings-help">No days created yet.</p>
                 )}
               </div>
+
+              <h3 className="settings-section-title">DAILY EVALUATIONS</h3>
+              <div className="settings-field">
+                <label className="settings-label">EVAL LINK (ANY DAY)</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={settings.evalTemplateUrl || ''}
+                  onChange={(e) => updateSettings({ evalTemplateUrl: e.target.value })}
+                  placeholder="https://feedback.sans.org/...&D=1&..."
+                />
+              </div>
+              <p className="settings-help">
+                Paste one day's eval link for this course run. Each day's link is made by
+                swapping in that day's Day# as <code>D=</code>, and the countdown timer's QR
+                button shows the selected day's code.
+              </p>
+              {settings.evalTemplateUrl?.trim() && (() => {
+                const info = parseEvalTemplate(settings.evalTemplateUrl);
+                if (!info.valid) {
+                  return <p className="settings-help settings-eval-error">⚠ {info.error}</p>;
+                }
+                const days = [...currentProfile.days].sort((a, b) => a.order - b.order);
+                const dayNumberCounts = new Map<number, number>();
+                days.forEach((d) => {
+                  if (d.dayNumber) dayNumberCounts.set(d.dayNumber, (dayNumberCounts.get(d.dayNumber) || 0) + 1);
+                });
+                return (
+                  <div className="settings-eval-preview">
+                    {info.course && <p className="settings-help">Course: {info.course}</p>}
+                    {days.map((day) => {
+                      const url = buildEvalUrl(settings.evalTemplateUrl, day.dayNumber);
+                      const duplicate = day.dayNumber && (dayNumberCounts.get(day.dayNumber) || 0) > 1;
+                      return (
+                        <p
+                          key={day.id}
+                          className={`settings-help ${!url || duplicate ? 'settings-eval-error' : ''}`}
+                          title={url || undefined}
+                        >
+                          {day.name}:{' '}
+                          {!url
+                            ? '⚠ set a Day# to get an eval'
+                            : duplicate
+                              ? `⚠ D=${day.dayNumber} is used by another day`
+                              : `D=${day.dayNumber}`}
+                        </p>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               <h3 className="settings-section-title">SCHEDULED TIMES</h3>
               <p className="settings-help">

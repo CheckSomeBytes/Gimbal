@@ -58,6 +58,7 @@ export interface Settings {
   customThemes?: Theme[]; // User-created custom themes
   fontSize: FontSize;
   labPollTemplate: string;
+  evalTemplateUrl?: string; // One day's course eval link; other days are derived by swapping D=
   timezone: string;
   scheduledTimes: ScheduledTime[];
   breakAlertTheme: Theme | null; // Theme to use when within 5 minutes of a break

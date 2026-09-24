@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       } | null;
       alertMinutes?: number;
       timezone?: string;
+      evalLink?: { url: string; dayNumber: number } | null;
     }
   ): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.OPEN_COUNTDOWN_TIMER, totalMinutes, message, theme);
@@ -231,6 +232,7 @@ declare global {
           } | null;
           alertMinutes?: number;
           timezone?: string;
+          evalLink?: { url: string; dayNumber: number } | null;
         }
       ) => Promise<boolean>;
       onTimerTextScaleChanged: (callback: (scale: number) => void) => () => void;

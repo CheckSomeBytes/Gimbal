@@ -846,3 +846,12 @@ input.settings-day-lab-input.input {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
+
+.settings-eval-preview {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-eval-error {
+  color: var(--color-danger);
+}
