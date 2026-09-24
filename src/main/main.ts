@@ -1080,6 +1080,8 @@ interface TimerTheme {
   alertMinutes?: number;
   /** IANA timezone used to display the return time. */
   timezone?: string;
+  /** Text before the end time under the timer; defaults to "Back at". */
+  endLabel?: string;
   /** Each day's course eval; the QR button lets the instructor pick one. */
   evalLinks?: { url: string; dayNumber: number; dayName: string }[];
   /** Day# of the day selected in the main window, highlighted in the picker. */
@@ -1126,6 +1128,12 @@ async function buildEvalQrs(evalLinks: TimerTheme['evalLinks']): Promise<EvalQr[
   return qrs.sort((a, b) => a.dayNumber - b.dayNumber);
 }
 
+// Embed a string as a JS literal inside an inline <script>. JSON.stringify
+// alone would let "</script>" in the value close the tag.
+function escapeJsString(value: string): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 // Open a countdown timer window
 function openCountdownTimer(
   totalMinutes: number,
@@ -1160,7 +1168,10 @@ function openCountdownTimer(
     });
 
     // Create HTML content for the countdown timer
-    const totalSeconds = totalMinutes * 60;
+    // Rounded: the class start timer passes fractional minutes so it lands
+    // on the start time exactly.
+    const totalSeconds = Math.round(totalMinutes * 60);
+    const endLabel = escapeJsString(theme.endLabel || 'Back at');
     // Clamp: a stored value outside this range would make the window unusable.
     const textScale = Math.min(2, Math.max(0.5, theme.textScale || 1));
     const alertSeconds = Math.max(0, theme.alertMinutes || 5) * 60;
@@ -1595,7 +1606,7 @@ ${evalQrs.map((q) => `    <div class="qr-day" data-day="${q.dayNumber}">
       // Formatted the same way as the "Back at approximately" chat message so
       // the two always agree.
       var backAt = new Date(deadline);
-      document.getElementById('returnTime').textContent = 'Back at ' + backAt.toLocaleTimeString('en-US', opts);
+      document.getElementById('returnTime').textContent = ${endLabel} + ' ' + backAt.toLocaleTimeString('en-US', opts);
     }
     function toggleQrMenu(event) {
       event.stopPropagation();

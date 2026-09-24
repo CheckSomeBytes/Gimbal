@@ -61,6 +61,7 @@ export interface Settings {
   evalTemplateUrl?: string; // One day's course eval link; other days are derived by swapping D=
   timezone: string;
   scheduledTimes: ScheduledTime[];
+  classStartTime?: string; // HH:MM (24-hour) the class starts; target of the class start timer
   breakAlertTheme: Theme | null; // Theme to use when within 5 minutes of a break
   breakAlertMinutes: number; // Minutes before break to trigger alert theme (default 5)
   lastLaunchDate?: string; // ISO date string of last launch

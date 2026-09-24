@@ -1027,6 +1027,20 @@ function SettingsModal() {
                 );
               })()}
 
+              <h3 className="settings-section-title">CLASS START</h3>
+              <div className="settings-field">
+                <label className="settings-label">START TIME</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={settings.classStartTime || '09:00'}
+                  onChange={(e) => updateSettings({ classStartTime: e.target.value || '09:00' })}
+                />
+              </div>
+              <p className="settings-help">
+                The CLASS START button in the timer popup counts down to this time.
+              </p>
+
               <h3 className="settings-section-title">SCHEDULED TIMES</h3>
               <p className="settings-help">
                 Add times to track (e.g., breaks, lunch). A countdown will show in the header.

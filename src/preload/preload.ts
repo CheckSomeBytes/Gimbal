@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       } | null;
       alertMinutes?: number;
       timezone?: string;
+      endLabel?: string;
       evalLinks?: { url: string; dayNumber: number; dayName: string }[];
       currentEvalDay?: number | null;
     }
@@ -233,6 +234,7 @@ declare global {
           } | null;
           alertMinutes?: number;
           timezone?: string;
+          endLabel?: string;
           evalLinks?: { url: string; dayNumber: number; dayName: string }[];
           currentEvalDay?: number | null;
         }

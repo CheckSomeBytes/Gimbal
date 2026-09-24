@@ -454,7 +454,7 @@ function Header() {
 
   // Colours and settings passed to the countdown window. Includes the break
   // alert theme so the timer turns red near the end, like the main window.
-  const getTimerTheme = () => {
+  const getTimerTheme = (endLabel?: string) => {
     const { theme, breakAlertTheme, timerFontFamily, timerTextScale } = currentProfile.settings;
     return {
       background: theme.colors.background,
@@ -478,6 +478,7 @@ function Header() {
         : null,
       alertMinutes: breakAlertMinutes,
       timezone,
+      endLabel,
       evalLinks: getEvalLinks(),
       currentEvalDay: currentDay?.dayNumber ?? null,
     };
@@ -529,6 +530,40 @@ function Header() {
     } else {
       addNotification(result.error || 'Failed to send time estimate', 'error');
     }
+  };
+
+  const classStartTime = currentProfile.settings.classStartTime || '09:00';
+
+  // Seconds from now until today's class start in the profile's timezone, or
+  // null if it has already passed.
+  const getSecondsUntilClassStart = (): number | null => {
+    const [hours, minutes] = classStartTime.split(':').map((n) => parseInt(n, 10));
+    if (isNaN(hours) || isNaN(minutes)) return null;
+    const now = new Date();
+    const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const startInTz = new Date(nowInTz);
+    startInTz.setHours(hours, minutes, 0, 0);
+    // toLocaleString drops milliseconds, so add them back to land on :00.
+    const seconds = (startInTz.getTime() - nowInTz.getTime() - now.getMilliseconds()) / 1000;
+    return seconds > 0 ? seconds : null;
+  };
+
+  const formatClassStartTime = () => {
+    const [hours, minutes] = classStartTime.split(':').map((n) => parseInt(n, 10));
+    const date = new Date();
+    date.setHours(hours || 0, minutes || 0, 0, 0);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const handleOpenClassStartTimer = async () => {
+    const seconds = getSecondsUntilClassStart();
+    if (seconds === null) {
+      addNotification(`Class start (${formatClassStartTime()}) has already passed today`, 'error');
+      return;
+    }
+    await window.electronAPI.openCountdownTimer(seconds / 60, 'Class Starts Soon', getTimerTheme('Starts at'));
+    addNotification('Class start timer opened!', 'success');
+    setShowTimeEstimatePopup(false);
   };
 
   const handleOpenCustomTimer = async () => {
@@ -1305,6 +1340,13 @@ function Header() {
                     title="Send estimate to target window"
                   >
                     SEND ESTIMATE
+                  </button>
+                  <button
+                    className="btn btn--secondary btn--full-width"
+                    onClick={handleOpenClassStartTimer}
+                    title="Open a timer counting down to the class start time (set in Settings > Days)"
+                  >
+                    CLASS START ({formatClassStartTime()})
                   </button>
                 </>
               )}
