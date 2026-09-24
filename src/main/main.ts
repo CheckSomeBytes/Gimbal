@@ -1344,6 +1344,9 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       white-space: nowrap;
       color: var(--accent);
       font-family: ${theme.fontFamily};
+      /* Own compositing layer: ClearType on a transparent window leaves
+         colored fringes and stray hairlines around the large glyphs. */
+      will-change: transform;
     }
     .return-time {
       font-size: calc(min(4vw, 6vh) * var(--text-scale));
@@ -1355,9 +1358,11 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       font-family: ${theme.fontFamily};
     }
     .timer.warning { color: #ffd93d; }
-    .timer.danger { color: var(--danger); animation: pulse 1s ease-in-out infinite; }
-    .timer.done { color: var(--success); }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .timer.danger { color: var(--danger); }
+    /* Time's up: fade slowly between blue and red. Fixed colors so it reads
+       the same on every theme. */
+    .timer.done { color: #4da6ff; animation: done-blink 2s ease-in-out infinite alternate; }
+    @keyframes done-blink { from { color: #4da6ff; } to { color: #ff4d4d; } }
   </style>
 </head>
 <body>
