@@ -904,8 +904,8 @@ function setupIPC(): void {
       message: string,
       theme: TimerTheme
     ) => {
-      const evalQrSvg = await buildEvalQrSvg(theme.evalLink);
-      return openCountdownTimer(totalMinutes, message, theme, evalQrSvg);
+      const evalQrs = await buildEvalQrs(theme.evalLinks);
+      return openCountdownTimer(totalMinutes, message, theme, evalQrs);
     }
   );
 
@@ -1080,8 +1080,10 @@ interface TimerTheme {
   alertMinutes?: number;
   /** IANA timezone used to display the return time. */
   timezone?: string;
-  /** Today's course eval, shown as a QR code the instructor can toggle. */
-  evalLink?: { url: string; dayNumber: number } | null;
+  /** Each day's course eval; the QR button lets the instructor pick one. */
+  evalLinks?: { url: string; dayNumber: number; dayName: string }[];
+  /** Day# of the day selected in the main window, highlighted in the picker. */
+  currentEvalDay?: number | null;
 }
 
 interface TimerAlertColors {
@@ -1093,22 +1095,35 @@ interface TimerAlertColors {
   border?: string;
 }
 
-// Render the eval link as an inline SVG QR code for the countdown window.
-async function buildEvalQrSvg(evalLink: TimerTheme['evalLink']): Promise<string | null> {
-  if (!evalLink || !/^https?:\/\//i.test(evalLink.url)) return null;
-  try {
-    // Always dark-on-white: phone scanners struggle with inverted or
-    // low-contrast codes, so this deliberately ignores the theme.
-    return await QRCode.toString(evalLink.url, {
-      type: 'svg',
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      color: { dark: '#000000', light: '#ffffff' },
-    });
-  } catch (error) {
-    console.error('Error generating eval QR code:', error);
-    return null;
+interface EvalQr {
+  dayNumber: number;
+  dayName: string;
+  svg: string;
+}
+
+// Render each day's eval link as an inline SVG QR code for the countdown window.
+async function buildEvalQrs(evalLinks: TimerTheme['evalLinks']): Promise<EvalQr[]> {
+  const qrs: EvalQr[] = [];
+  for (const link of evalLinks || []) {
+    if (!/^https?:\/\//i.test(link.url)) continue;
+    // One entry per Day#: the settings page flags duplicates, and they would
+    // produce identical codes anyway.
+    if (qrs.some((q) => q.dayNumber === link.dayNumber)) continue;
+    try {
+      // Always dark-on-white: phone scanners struggle with inverted or
+      // low-contrast codes, so this deliberately ignores the theme.
+      const svg = await QRCode.toString(link.url, {
+        type: 'svg',
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+      qrs.push({ dayNumber: link.dayNumber, dayName: link.dayName, svg });
+    } catch (error) {
+      console.error(`Error generating eval QR code for day ${link.dayNumber}:`, error);
+    }
   }
+  return qrs.sort((a, b) => a.dayNumber - b.dayNumber);
 }
 
 // Open a countdown timer window
@@ -1116,7 +1131,7 @@ function openCountdownTimer(
   totalMinutes: number,
   message: string,
   theme: TimerTheme,
-  evalQrSvg: string | null = null
+  evalQrs: EvalQr[] = []
 ): boolean {
   try {
     // Close existing countdown window if open
@@ -1161,7 +1176,10 @@ function openCountdownTimer(
     } catch {
       timezone = undefined;
     }
-    const escapedMessage = message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const escapeHtml = (value: string) =>
+      value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const escapedMessage = escapeHtml(message);
+    const currentEvalDay = theme.currentEvalDay ?? null;
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -1212,13 +1230,13 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       -webkit-app-region: drag;
       border: 2px solid var(--border);
     }
-    button, input, .message-container, .qr-panel {
+    button, input, .message-container, .qr-panel, .qr-menu {
       -webkit-app-region: no-drag;
     }
     /* Keep the hover controls above the timer text: the text is later in the
        DOM and on its own compositing layer, so it would otherwise paint over
        them and swallow the clicks once it grows large enough to overlap. */
-    .close-btn, .qr-btn, .time-controls, .size-controls {
+    .close-btn, .qr-btn, .qr-menu, .time-controls, .size-controls {
       z-index: 10;
     }
     .timer-content {
@@ -1245,10 +1263,10 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       opacity: 0;
       transition: opacity 0.2s;
     }
-    body:hover .qr-btn, body.qr-on .qr-btn {
+    body:hover .qr-btn, body.qr-on .qr-btn, body.qr-menu-open .qr-btn {
       opacity: 1;
     }
-    .qr-btn:hover, body.qr-on .qr-btn {
+    .qr-btn:hover, body.qr-on .qr-btn, body.qr-menu-open .qr-btn {
       border-color: var(--accent);
       color: var(--accent);
     }
@@ -1273,6 +1291,66 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
     }
     body.qr-on .qr-panel {
       display: flex;
+    }
+    .qr-day {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+    }
+    .qr-day.active {
+      display: flex;
+    }
+    /* Day picker opened by the QR button. */
+    .qr-menu {
+      position: absolute;
+      top: 42px;
+      left: 10px;
+      display: none;
+      flex-direction: column;
+      max-height: calc(100vh - 60px);
+      overflow-y: auto;
+      background: var(--bg);
+      border: 2px solid var(--accent);
+      padding: 4px;
+    }
+    body.qr-menu-open .qr-menu {
+      display: flex;
+    }
+    .qr-menu-title {
+      font-family: ${theme.fontFamily};
+      font-size: 8px;
+      color: var(--text-muted);
+      padding: 4px 8px;
+      text-align: left;
+    }
+    .qr-menu-item {
+      background: none;
+      border: 2px solid transparent;
+      color: var(--text);
+      font-family: ${theme.fontFamily};
+      font-size: 10px;
+      padding: 6px 8px;
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .qr-menu-item:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .qr-menu-item.shown {
+      color: var(--accent);
+    }
+    .qr-menu-note {
+      color: var(--text-muted);
+    }
+    .qr-menu-hide {
+      color: var(--text-muted);
+      margin-top: 4px;
+      display: none;
+    }
+    body.qr-on .qr-menu-hide {
+      display: block;
     }
     .qr-code svg {
       display: block;
@@ -1464,7 +1542,12 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
 </head>
 <body>
   <button class="close-btn" onclick="window.close()" title="Close">X</button>
-${evalQrSvg && theme.evalLink ? `  <button class="qr-btn" onclick="toggleQr()" title="Show or hide the Day ${theme.evalLink.dayNumber} eval QR code">QR</button>
+${evalQrs.length ? `  <button class="qr-btn" onclick="toggleQrMenu(event)" title="Show a day's eval QR code">QR</button>
+  <div class="qr-menu" id="qrMenu">
+    <div class="qr-menu-title">SHOW EVAL FOR</div>
+${evalQrs.map((q) => `    <button class="qr-menu-item" data-day="${q.dayNumber}" onclick="showQr(${q.dayNumber})">Day ${q.dayNumber} - ${escapeHtml(q.dayName)}${q.dayNumber === currentEvalDay ? ' <span class="qr-menu-note">(today)</span>' : ''}</button>
+`).join('')}    <button class="qr-menu-item qr-menu-hide" onclick="hideQr()">Hide QR</button>
+  </div>
 ` : ''}  <div class="time-controls">
     <button class="time-btn" onclick="adjustTime(60)" title="Add 1 minute">+</button>
     <button class="time-btn" onclick="adjustTime(-60)" title="Remove 1 minute">−</button>
@@ -1482,10 +1565,12 @@ ${evalQrSvg && theme.evalLink ? `  <button class="qr-btn" onclick="toggleQr()" t
   <div class="timer" id="timer">00:00</div>
   <div class="return-time" id="returnTime"></div>
   </div>
-${evalQrSvg && theme.evalLink ? `  <div class="qr-panel">
-    <div class="qr-code">${evalQrSvg}</div>
-    <div class="qr-label">Day ${theme.evalLink.dayNumber} Evaluation</div>
-  </div>
+${evalQrs.length ? `  <div class="qr-panel">
+${evalQrs.map((q) => `    <div class="qr-day" data-day="${q.dayNumber}">
+      <div class="qr-code">${q.svg}</div>
+      <div class="qr-label">Day ${q.dayNumber} Evaluation</div>
+    </div>
+`).join('')}  </div>
 ` : ''}  <script>
     // Track a wall-clock deadline rather than counting ticks. Timers in a
     // background window get throttled or suspended outright (most visibly when
@@ -1512,9 +1597,29 @@ ${evalQrSvg && theme.evalLink ? `  <div class="qr-panel">
       var backAt = new Date(deadline);
       document.getElementById('returnTime').textContent = 'Back at ' + backAt.toLocaleTimeString('en-US', opts);
     }
-    function toggleQr() {
-      document.body.classList.toggle('qr-on');
+    function toggleQrMenu(event) {
+      event.stopPropagation();
+      document.body.classList.toggle('qr-menu-open');
     }
+    function showQr(day) {
+      document.querySelectorAll('.qr-day, .qr-menu-item').forEach(function(el) {
+        var match = el.getAttribute('data-day') === String(day);
+        el.classList.toggle(el.classList.contains('qr-day') ? 'active' : 'shown', match);
+      });
+      document.body.classList.add('qr-on');
+      document.body.classList.remove('qr-menu-open');
+    }
+    function hideQr() {
+      document.body.classList.remove('qr-on');
+      document.body.classList.remove('qr-menu-open');
+      document.querySelectorAll('.qr-menu-item.shown').forEach(function(el) { el.classList.remove('shown'); });
+    }
+    // Clicking anywhere else closes the day picker.
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest || !e.target.closest('.qr-menu')) {
+        document.body.classList.remove('qr-menu-open');
+      }
+    });
     var isEditing = false;
     var MIN_SCALE = 0.5;
     var MAX_SCALE = 2;

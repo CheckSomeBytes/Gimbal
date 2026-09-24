@@ -989,8 +989,8 @@ function SettingsModal() {
               </div>
               <p className="settings-help">
                 Paste one day's eval link for this course run. Each day's link is made by
-                swapping in that day's Day# as <code>D=</code>, and the countdown timer's QR
-                button shows the selected day's code.
+                swapping in that day's Day# as <code>D=</code>. The countdown timer's QR
+                button lets you pick which day's code to show.
               </p>
               {settings.evalTemplateUrl?.trim() && (() => {
                 const info = parseEvalTemplate(settings.evalTemplateUrl);

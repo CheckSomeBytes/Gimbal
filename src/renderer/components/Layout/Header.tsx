@@ -443,12 +443,14 @@ function Header() {
     }
   };
 
-  // The selected day's eval, derived from its Day# so the QR code can only
-  // ever point at that day's evaluation. No Day#, no QR.
-  const getEvalLink = () => {
-    const url = buildEvalUrl(currentProfile.settings.evalTemplateUrl, currentDay?.dayNumber);
-    return url && currentDay?.dayNumber ? { url, dayNumber: currentDay.dayNumber } : null;
-  };
+  // Every day's eval, each derived from that day's own Day# so a QR code can
+  // only ever point at the evaluation for the day it is labelled with. Days
+  // without a Day# are left out.
+  const getEvalLinks = () =>
+    sortedDays.flatMap((day) => {
+      const url = buildEvalUrl(currentProfile.settings.evalTemplateUrl, day.dayNumber);
+      return url && day.dayNumber ? [{ url, dayNumber: day.dayNumber, dayName: day.name }] : [];
+    });
 
   // Colours and settings passed to the countdown window. Includes the break
   // alert theme so the timer turns red near the end, like the main window.
@@ -476,7 +478,8 @@ function Header() {
         : null,
       alertMinutes: breakAlertMinutes,
       timezone,
-      evalLink: getEvalLink(),
+      evalLinks: getEvalLinks(),
+      currentEvalDay: currentDay?.dayNumber ?? null,
     };
   };
 
