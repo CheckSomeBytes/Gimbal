@@ -171,6 +171,9 @@ function Header() {
   const [isCustomEstimateLabNumber, setIsCustomEstimateLabNumber] = useState(false);
   const [estimateLabTime, setEstimateLabTime] = useState('30');
   const [estimateBreakId, setEstimateBreakId] = useState<string>('');
+  // Class start is its own option: it counts down to a clock time, so it
+  // can't be combined with a lab or break.
+  const [isClassStartSelected, setIsClassStartSelected] = useState(false);
 
   // Custom timer mode state
   const [isCustomTimerMode, setIsCustomTimerMode] = useState(false);
@@ -370,8 +373,39 @@ function Header() {
   // Get scheduled times marked as breaks for the time estimate popup
   const breakScheduledTimes = scheduledTimes.filter((st) => st.isBreak);
 
+  const classStartTime = currentProfile.settings.classStartTime || '09:00';
+
+  // Seconds from now until today's class start in the profile's timezone, or
+  // null if it has already passed.
+  const getSecondsUntilClassStart = (): number | null => {
+    const [hours, minutes] = classStartTime.split(':').map((n) => parseInt(n, 10));
+    if (isNaN(hours) || isNaN(minutes)) return null;
+    const now = new Date();
+    const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const startInTz = new Date(nowInTz);
+    startInTz.setHours(hours, minutes, 0, 0);
+    // toLocaleString drops milliseconds, so add them back to land on :00.
+    const seconds = (startInTz.getTime() - nowInTz.getTime() - now.getMilliseconds()) / 1000;
+    return seconds > 0 ? seconds : null;
+  };
+
+  const formatClassStartTime = () => {
+    const [hours, minutes] = classStartTime.split(':').map((n) => parseInt(n, 10));
+    const date = new Date();
+    date.setHours(hours || 0, minutes || 0, 0, 0);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
   // Calculate return time based on lab time and optional break
   const calculateReturnTime = (): { time: string; message: string; timerMessage: string; totalMinutes: number } => {
+    if (isClassStartSelected) {
+      const time = formatClassStartTime();
+      const seconds = getSecondsUntilClassStart();
+      return seconds === null
+        ? { time, message: `Class start (${time}) has already passed today`, timerMessage: 'Class Starts Soon', totalMinutes: 0 }
+        : { time, message: `:school: Class starts at ${time}`, timerMessage: 'Class Starts Soon', totalMinutes: seconds / 60 };
+    }
+
     const hasLab = estimateLabNumber.trim() !== '';
     const labMinutes = hasLab ? (parseInt(estimateLabTime) || 30) : 0;
     const selectedBreak = breakScheduledTimes.find((st) => st.id === estimateBreakId);
@@ -414,10 +448,10 @@ function Header() {
   };
 
   const handleSendTimeEstimate = async () => {
-    const { totalMinutes } = calculateReturnTime();
+    const { totalMinutes, message: errorMessage } = calculateReturnTime();
 
     if (totalMinutes <= 0) {
-      addNotification('Please select lab time or a break', 'error');
+      addNotification(errorMessage, 'error');
       return;
     }
 
@@ -485,14 +519,14 @@ function Header() {
   };
 
   const handleOpenCountdownTimer = async () => {
-    const { totalMinutes, timerMessage } = calculateReturnTime();
+    const { totalMinutes, message, timerMessage } = calculateReturnTime();
 
     if (totalMinutes <= 0) {
-      addNotification('Please select lab time or a break', 'error');
+      addNotification(message, 'error');
       return;
     }
 
-    await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme());
+    await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme(isClassStartSelected ? 'Starts at' : undefined));
     addNotification('Countdown timer opened!', 'success');
   };
 
@@ -500,7 +534,7 @@ function Header() {
     const { totalMinutes, message, timerMessage } = calculateReturnTime();
 
     if (totalMinutes <= 0) {
-      addNotification('Please select lab time or a break', 'error');
+      addNotification(message, 'error');
       return;
     }
 
@@ -524,46 +558,12 @@ function Header() {
       setShowTimeEstimatePopup(false);
 
       // Open the countdown timer
-      await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme());
+      await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme(isClassStartSelected ? 'Starts at' : undefined));
 
       addNotification('Time estimate sent and timer opened!', 'success');
     } else {
       addNotification(result.error || 'Failed to send time estimate', 'error');
     }
-  };
-
-  const classStartTime = currentProfile.settings.classStartTime || '09:00';
-
-  // Seconds from now until today's class start in the profile's timezone, or
-  // null if it has already passed.
-  const getSecondsUntilClassStart = (): number | null => {
-    const [hours, minutes] = classStartTime.split(':').map((n) => parseInt(n, 10));
-    if (isNaN(hours) || isNaN(minutes)) return null;
-    const now = new Date();
-    const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
-    const startInTz = new Date(nowInTz);
-    startInTz.setHours(hours, minutes, 0, 0);
-    // toLocaleString drops milliseconds, so add them back to land on :00.
-    const seconds = (startInTz.getTime() - nowInTz.getTime() - now.getMilliseconds()) / 1000;
-    return seconds > 0 ? seconds : null;
-  };
-
-  const formatClassStartTime = () => {
-    const [hours, minutes] = classStartTime.split(':').map((n) => parseInt(n, 10));
-    const date = new Date();
-    date.setHours(hours || 0, minutes || 0, 0, 0);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  };
-
-  const handleOpenClassStartTimer = async () => {
-    const seconds = getSecondsUntilClassStart();
-    if (seconds === null) {
-      addNotification(`Class start (${formatClassStartTime()}) has already passed today`, 'error');
-      return;
-    }
-    await window.electronAPI.openCountdownTimer(seconds / 60, 'Class Starts Soon', getTimerTheme('Starts at'));
-    addNotification('Class start timer opened!', 'success');
-    setShowTimeEstimatePopup(false);
   };
 
   const handleOpenCustomTimer = async () => {
@@ -1087,6 +1087,7 @@ function Header() {
             setEstimateBreakId('');
             setEstimateLabNumber('');
             setIsCustomEstimateLabNumber(false);
+            setIsClassStartSelected(false);
             setIsCustomTimerMode(false);
             setShowTimeEstimatePopup(true);
           }}
@@ -1246,11 +1247,26 @@ function Header() {
                 <>
                   <div className="time-estimate-buttons-row">
                     <div className="lab-buttons-row">
+                      <button
+                        className={`btn btn--small lab-btn ${isClassStartSelected ? 'lab-btn--active' : ''}`}
+                        onClick={() => {
+                          setIsClassStartSelected(!isClassStartSelected);
+                          setEstimateBreakId('');
+                          setEstimateLabNumber('');
+                          setIsCustomEstimateLabNumber(false);
+                        }}
+                        title={`Count down to class start (${formatClassStartTime()}, set in Settings > Days)`}
+                      >
+                        Class Start
+                      </button>
                       {breakScheduledTimes.map((st) => (
                         <button
                           key={st.id}
                           className={`btn btn--small lab-btn ${estimateBreakId === st.id ? 'lab-btn--active' : ''}`}
-                          onClick={() => setEstimateBreakId(estimateBreakId === st.id ? '' : st.id)}
+                          onClick={() => {
+                            setEstimateBreakId(estimateBreakId === st.id ? '' : st.id);
+                            setIsClassStartSelected(false);
+                          }}
                         >
                           {st.label}
                         </button>
@@ -1272,6 +1288,7 @@ function Header() {
                                   } else {
                                     setEstimateLabNumber(label);
                                     setIsCustomEstimateLabNumber(false);
+                                    setIsClassStartSelected(false);
                                   }
                                 }}
                               >
@@ -1286,7 +1303,7 @@ function Header() {
                         className={`input lab-popup-input-small ${isCustomEstimateLabNumber ? 'lab-popup-input-small--active' : ''}`}
                         placeholder="..."
                         value={isCustomEstimateLabNumber ? estimateLabNumber : ''}
-                        onChange={(e) => { setEstimateLabNumber(e.target.value); setIsCustomEstimateLabNumber(true); }}
+                        onChange={(e) => { setEstimateLabNumber(e.target.value); setIsCustomEstimateLabNumber(true); setIsClassStartSelected(false); }}
                       />
                     </div>
                   </div>
@@ -1340,13 +1357,6 @@ function Header() {
                     title="Send estimate to target window"
                   >
                     SEND ESTIMATE
-                  </button>
-                  <button
-                    className="btn btn--secondary btn--full-width"
-                    onClick={handleOpenClassStartTimer}
-                    title="Open a timer counting down to the class start time (set in Settings > Days)"
-                  >
-                    CLASS START ({formatClassStartTime()})
                   </button>
                 </>
               )}

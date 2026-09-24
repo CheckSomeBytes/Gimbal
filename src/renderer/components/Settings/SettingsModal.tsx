@@ -1038,7 +1038,7 @@ function SettingsModal() {
                 />
               </div>
               <p className="settings-help">
-                The CLASS START button in the timer popup counts down to this time.
+                The Class Start option in the timer popup counts down to this time.
               </p>
 
               <h3 className="settings-section-title">SCHEDULED TIMES</h3>
