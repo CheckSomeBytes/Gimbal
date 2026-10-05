@@ -144,6 +144,8 @@ function Header() {
     isEditMode,
     toggleEditMode,
     addNotification,
+    sendToTargetWindow,
+    automationSupported,
     updateSettings,
     isBreakAlertActive,
     setBreakAlertActive,
@@ -157,6 +159,8 @@ function Header() {
   } = useAppStore();
 
   const currentProfile = getCurrentProfile();
+  // Send buttons only copy where auto-paste isn't supported, so label them that way.
+  const sendLabel = automationSupported ? 'SEND' : 'COPY';
 
   const [showLabPopup, setShowLabPopup] = useState(false);
   const [labNumber, setLabNumber] = useState('');
@@ -400,23 +404,14 @@ function Header() {
       return;
     }
 
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
-
     const { message } = calculateReturnTime();
 
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
-      message
-    );
+    const result = await sendToTargetWindow(message);
 
     if (result.success) {
-      addNotification('Time estimate sent!', 'success');
+      if (!result.copiedOnly) {
+        addNotification('Time estimate sent!', 'success');
+      }
     } else {
       addNotification(result.error || 'Failed to send time estimate', 'error');
     }
@@ -452,20 +447,8 @@ function Header() {
       return;
     }
 
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
-
     // Focus window, paste, and press Enter
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
-      message,
-      true // Press Enter after pasting
-    );
+    const result = await sendToTargetWindow(message, true);
 
     if (result.success) {
       // Close the popup
@@ -484,7 +467,9 @@ function Header() {
         border: theme.colors.border,
       });
 
-      addNotification('Time estimate sent and timer opened!', 'success');
+      if (!result.copiedOnly) {
+        addNotification('Time estimate sent and timer opened!', 'success');
+      }
     } else {
       addNotification(result.error || 'Failed to send time estimate', 'error');
     }
@@ -519,23 +504,16 @@ function Header() {
       return;
     }
 
-    const { windowTarget, labPollTemplate } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
+    const { labPollTemplate } = currentProfile.settings;
 
     const pollText = (labPollTemplate || '').replace(/<LAB_NUMBER>/g, labNumber.trim());
 
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
-      pollText
-    );
+    const result = await sendToTargetWindow(pollText);
 
     if (result.success) {
-      addNotification(`Lab ${labNumber} poll sent!`, 'success');
+      if (!result.copiedOnly) {
+        addNotification(`Lab ${labNumber} poll sent!`, 'success');
+      }
       setShowLabPopup(false);
       setLabNumber('');
     } else {
@@ -668,12 +646,6 @@ function Header() {
 
   const handleSearchFocusAndPaste = async (e: React.MouseEvent, result: SearchResult) => {
     e.stopPropagation();
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
 
     let textToPaste: string;
     if (result.type === 'link') {
@@ -685,11 +657,9 @@ function Header() {
       textToPaste = note.content;
     }
 
-    const pasteResult = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
+    const pasteResult = await sendToTargetWindow(
       textToPaste,
-      windowTarget.pressEnterAfterPaste
+      currentProfile.settings.windowTarget.pressEnterAfterPaste
     );
 
     if (!pasteResult.success) {
@@ -717,23 +687,16 @@ function Header() {
   };
 
   const handleQuickLabPoll = async (labNum: string) => {
-    const { windowTarget, labPollTemplate } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
+    const { labPollTemplate } = currentProfile.settings;
 
     const pollText = (labPollTemplate || '').replace(/<LAB_NUMBER>/g, labNum);
 
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
-      pollText
-    );
+    const result = await sendToTargetWindow(pollText);
 
     if (result.success) {
-      addNotification(`Lab ${labNum} poll sent!`, 'success');
+      if (!result.copiedOnly) {
+        addNotification(`Lab ${labNum} poll sent!`, 'success');
+      }
     } else {
       addNotification(result.error || 'Failed to send lab poll', 'error');
     }
@@ -775,19 +738,12 @@ function Header() {
       addNotification('Please fill in at least 2 options', 'error');
       return;
     }
-    const { windowTarget } = currentProfile.settings;
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
     const pollText = generateQuickPollText();
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
-      pollText
-    );
+    const result = await sendToTargetWindow(pollText);
     if (result.success) {
-      addNotification('Quick poll sent!', 'success');
+      if (!result.copiedOnly) {
+        addNotification('Quick poll sent!', 'success');
+      }
       setShowQuickPollPopup(false);
     } else {
       addNotification(result.error || 'Failed to send quick poll', 'error');
@@ -947,7 +903,7 @@ function Header() {
                 className="btn btn--success"
                 onClick={handleSendLabPoll}
               >
-                SEND LAB POLL
+                {sendLabel} LAB POLL
               </button>
               <button
                 className="btn btn--secondary"
@@ -1062,7 +1018,7 @@ function Header() {
                     e.dataTransfer.setData('application/lab-assign', JSON.stringify({ labNumber: label }));
                     e.dataTransfer.effectAllowed = 'copy';
                   }}
-                  title={isEditMode ? `Drag to assign Lab ${label} to a section, or click to send poll` : `Send Lab ${label} poll`}
+                  title={isEditMode ? `Drag to assign Lab ${label} to a section, or click to ${automationSupported ? 'send' : 'copy'} poll` : `${automationSupported ? 'Send' : 'Copy'} Lab ${label} poll`}
                 >
                   {label}
                 </button>
@@ -1110,9 +1066,9 @@ function Header() {
                     <button
                       className="btn btn--small btn--success"
                       onClick={() => handleQuickLabPoll(openLabNotesLabNumber)}
-                      title="Send lab poll to target window"
+                      title={automationSupported ? 'Send lab poll to target window' : 'Copy lab poll to clipboard'}
                     >
-                      🧪 SEND POLL
+                      🧪 {sendLabel} POLL
                     </button>
                   </>
                 }
@@ -1257,9 +1213,9 @@ function Header() {
                   <button
                     className="btn btn--accent btn--full-width"
                     onClick={handleSendAndOpenTimer}
-                    title="Send estimate, press Enter, and open timer"
+                    title={automationSupported ? 'Send estimate, press Enter, and open timer' : 'Copy estimate to clipboard and open timer'}
                   >
-                    SEND & OPEN TIMER
+                    {sendLabel} & OPEN TIMER
                   </button>
                   <button
                     className="btn btn--primary btn--half-width"
@@ -1271,9 +1227,9 @@ function Header() {
                   <button
                     className="btn btn--success btn--half-width"
                     onClick={handleSendTimeEstimate}
-                    title="Send estimate to target window"
+                    title={automationSupported ? 'Send estimate to target window' : 'Copy estimate to clipboard'}
                   >
-                    SEND ESTIMATE
+                    {sendLabel} ESTIMATE
                   </button>
                 </>
               )}
@@ -1495,12 +1451,15 @@ function Header() {
                   </div>
                 )}
               </div>
-              <button
-                className="btn btn--success btn--half-width"
-                onClick={handleSendQuickPoll}
-              >
-                SEND TO SLACK
-              </button>
+              {/* Without auto-paste this would only duplicate COPY. */}
+              {automationSupported && (
+                <button
+                  className="btn btn--success btn--half-width"
+                  onClick={handleSendQuickPoll}
+                >
+                  SEND TO SLACK
+                </button>
+              )}
               <button
                 className="btn btn--primary btn--half-width"
                 onClick={async () => {
@@ -1599,7 +1558,7 @@ function Header() {
                         <button
                           className="search-action-btn"
                           onClick={(e) => handleSearchFocusAndPaste(e, result)}
-                          title="Focus window and paste"
+                          title={automationSupported ? 'Focus window and paste' : 'Copy to clipboard (auto-paste isn\'t available on this platform)'}
                         >
                           <img src={iconSlack} alt="Focus & Paste" className="search-action-icon" />
                         </button>

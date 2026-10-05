@@ -11,6 +11,7 @@ function ValidationModal() {
     resetAllPolls,
     addNotification,
     getCurrentProfile,
+    automationSupported,
   } = useAppStore();
 
   const currentProfile = getCurrentProfile();
@@ -69,29 +70,34 @@ function ValidationModal() {
             </select>
           </div>
 
-          <div className="validation-field">
-            <label className="validation-label">WINDOW TARGET PATTERN</label>
-            <input
-              type="text"
-              className="input"
-              value={windowPattern}
-              onChange={(e) => setWindowPattern(e.target.value)}
-              placeholder="e.g., Slack"
-            />
-          </div>
+          {/* The window target does nothing where auto-paste isn't supported. */}
+          {automationSupported && (
+            <>
+              <div className="validation-field">
+                <label className="validation-label">WINDOW TARGET PATTERN</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={windowPattern}
+                  onChange={(e) => setWindowPattern(e.target.value)}
+                  placeholder="e.g., Slack"
+                />
+              </div>
 
-          <div className="validation-field">
-            <label className="validation-label">MATCH MODE</label>
-            <select
-              className="select"
-              value={matchMode}
-              onChange={(e) => setMatchMode(e.target.value as 'exact' | 'contains' | 'regex')}
-            >
-              <option value="contains">Contains</option>
-              <option value="exact">Exact</option>
-              <option value="regex">Regex</option>
-            </select>
-          </div>
+              <div className="validation-field">
+                <label className="validation-label">MATCH MODE</label>
+                <select
+                  className="select"
+                  value={matchMode}
+                  onChange={(e) => setMatchMode(e.target.value as 'exact' | 'contains' | 'regex')}
+                >
+                  <option value="contains">Contains</option>
+                  <option value="exact">Exact</option>
+                  <option value="regex">Regex</option>
+                </select>
+              </div>
+            </>
+          )}
 
           <label className="validation-checkbox">
             <input

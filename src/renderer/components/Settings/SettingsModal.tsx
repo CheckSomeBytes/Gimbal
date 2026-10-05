@@ -33,6 +33,7 @@ function SettingsModal() {
     duplicateProfile,
     settingsTab,
     setSettingsTab,
+    automationSupported,
   } = useAppStore();
 
   const currentProfile = getCurrentProfile();
@@ -1235,135 +1236,144 @@ function SettingsModal() {
               </div>
 
               <h3 className="settings-section-title">WINDOW TARGET</h3>
-              <p className="settings-help">
-                Select a window or type a pattern to match when pasting.
-              </p>
+              {automationSupported ? (
+                <>
+                  <p className="settings-help">
+                    Select a window or type a pattern to match when pasting.
+                  </p>
 
-              <div className="settings-field">
-                <label className="settings-label">CURRENT PATTERN</label>
-                <div className="settings-pattern-row">
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g., Zoom Meeting, Slack, etc."
-                    value={settings.windowTarget.pattern}
-                    onChange={(e) => {
-                      setTargetTestResult(null);
-                      updateSettings({
-                        windowTarget: {
-                          ...settings.windowTarget,
-                          pattern: e.target.value,
-                        },
-                      });
-                    }}
-                  />
-                  <select
-                    className="select settings-match-mode"
-                    value={settings.windowTarget.matchMode}
-                    onChange={(e) => {
-                      setTargetTestResult(null);
-                      updateSettings({
-                        windowTarget: {
-                          ...settings.windowTarget,
-                          matchMode: e.target.value as 'exact' | 'contains' | 'regex',
-                        },
-                      });
-                    }}
-                  >
-                    <option value="contains">Contains</option>
-                    <option value="exact">Exact</option>
-                    <option value="regex">Regex</option>
-                  </select>
-                </div>
-                <div className="settings-target-test">
-                  <button
-                    className="btn btn--small btn--secondary"
-                    onClick={handleTestWindowTarget}
-                    disabled={isTestingTarget}
-                    title="Check this pattern finds a window, without pasting anything"
-                  >
-                    {isTestingTarget ? 'TESTING...' : 'TEST TARGET'}
-                  </button>
-                  {targetTestResult && (
-                    <div
-                      className={`settings-target-test-result ${
-                        targetTestResult.ok
-                          ? 'settings-target-test-result--ok'
-                          : 'settings-target-test-result--fail'
-                      }`}
-                    >
-                      <span className="settings-target-test-icon">
-                        {targetTestResult.ok ? '✓' : '⚠'}
-                      </span>
-                      <div className="settings-target-test-body">
-                        <div>{targetTestResult.message}</div>
-                        {targetTestResult.matches && targetTestResult.matches.length > 0 && (
-                          <ul className="settings-target-test-matches">
-                            {targetTestResult.matches.slice(0, 5).map((title, i) => (
-                              <li key={i} className="truncate" title={title}>
-                                {i === 0 ? '→ ' : ''}
-                                {title}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
+                  <div className="settings-field">
+                    <label className="settings-label">CURRENT PATTERN</label>
+                    <div className="settings-pattern-row">
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="e.g., Zoom Meeting, Slack, etc."
+                        value={settings.windowTarget.pattern}
+                        onChange={(e) => {
+                          setTargetTestResult(null);
+                          updateSettings({
+                            windowTarget: {
+                              ...settings.windowTarget,
+                              pattern: e.target.value,
+                            },
+                          });
+                        }}
+                      />
+                      <select
+                        className="select settings-match-mode"
+                        value={settings.windowTarget.matchMode}
+                        onChange={(e) => {
+                          setTargetTestResult(null);
+                          updateSettings({
+                            windowTarget: {
+                              ...settings.windowTarget,
+                              matchMode: e.target.value as 'exact' | 'contains' | 'regex',
+                            },
+                          });
+                        }}
+                      >
+                        <option value="contains">Contains</option>
+                        <option value="exact">Exact</option>
+                        <option value="regex">Regex</option>
+                      </select>
                     </div>
-                  )}
-                </div>
-              </div>
+                    <div className="settings-target-test">
+                      <button
+                        className="btn btn--small btn--secondary"
+                        onClick={handleTestWindowTarget}
+                        disabled={isTestingTarget}
+                        title="Check this pattern finds a window, without pasting anything"
+                      >
+                        {isTestingTarget ? 'TESTING...' : 'TEST TARGET'}
+                      </button>
+                      {targetTestResult && (
+                        <div
+                          className={`settings-target-test-result ${
+                            targetTestResult.ok
+                              ? 'settings-target-test-result--ok'
+                              : 'settings-target-test-result--fail'
+                          }`}
+                        >
+                          <span className="settings-target-test-icon">
+                            {targetTestResult.ok ? '✓' : '⚠'}
+                          </span>
+                          <div className="settings-target-test-body">
+                            <div>{targetTestResult.message}</div>
+                            {targetTestResult.matches && targetTestResult.matches.length > 0 && (
+                              <ul className="settings-target-test-matches">
+                                {targetTestResult.matches.slice(0, 5).map((title, i) => (
+                                  <li key={i} className="truncate" title={title}>
+                                    {i === 0 ? '→ ' : ''}
+                                    {title}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-              <div className="settings-field">
-                <div className="settings-label-row">
-                  <label className="settings-label">SELECT FROM OPEN WINDOWS</label>
-                  <button
-                    className="btn btn--small btn--secondary"
-                    onClick={loadWindowList}
-                    disabled={isLoadingWindows}
-                  >
-                    {isLoadingWindows ? '...' : '↻'}
-                  </button>
-                </div>
-                <select
-                  className="select"
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      selectWindow(e.target.value);
-                    }
-                  }}
-                  disabled={isLoadingWindows || windowList.length === 0}
-                >
-                  <option value="">
-                    {isLoadingWindows ? 'Loading...' : windowList.length === 0 ? 'No windows found' : 'Choose a window...'}
-                  </option>
-                  {windowList.map((win, index) => (
-                    <option key={index} value={win.title}>
-                      {win.processName}: {win.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div className="settings-field">
+                    <div className="settings-label-row">
+                      <label className="settings-label">SELECT FROM OPEN WINDOWS</label>
+                      <button
+                        className="btn btn--small btn--secondary"
+                        onClick={loadWindowList}
+                        disabled={isLoadingWindows}
+                      >
+                        {isLoadingWindows ? '...' : '↻'}
+                      </button>
+                    </div>
+                    <select
+                      className="select"
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          selectWindow(e.target.value);
+                        }
+                      }}
+                      disabled={isLoadingWindows || windowList.length === 0}
+                    >
+                      <option value="">
+                        {isLoadingWindows ? 'Loading...' : windowList.length === 0 ? 'No windows found' : 'Choose a window...'}
+                      </option>
+                      {windowList.map((win, index) => (
+                        <option key={index} value={win.title}>
+                          {win.processName}: {win.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <h3 className="settings-section-title">PASTE OPTIONS</h3>
+                  <h3 className="settings-section-title">PASTE OPTIONS</h3>
 
-              <div className="settings-field">
-                <label className="settings-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={settings.windowTarget.pressEnterAfterPaste || false}
-                    onChange={(e) =>
-                      updateSettings({
-                        windowTarget: {
-                          ...settings.windowTarget,
-                          pressEnterAfterPaste: e.target.checked,
-                        },
-                      })
-                    }
-                  />
-                  <span>Press Enter after pasting URLs and Notes</span>
-                </label>
-              </div>
+                  <div className="settings-field">
+                    <label className="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.windowTarget.pressEnterAfterPaste || false}
+                        onChange={(e) =>
+                          updateSettings({
+                            windowTarget: {
+                              ...settings.windowTarget,
+                              pressEnterAfterPaste: e.target.checked,
+                            },
+                          })
+                        }
+                      />
+                      <span>Press Enter after pasting URLs and Notes</span>
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <p className="settings-help">
+                  Auto-paste isn't available on this platform. Send buttons copy to the
+                  clipboard instead, so you can paste into your target window yourself.
+                </p>
+              )}
 
               <h3 className="settings-section-title">POLLS</h3>
 

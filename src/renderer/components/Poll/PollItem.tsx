@@ -12,7 +12,7 @@ interface PollItemProps {
 }
 
 function PollItem({ dayId, sectionId, poll }: PollItemProps) {
-  const { updatePoll, deletePoll, markPollSent, resetPoll, addNotification, isEditMode, getCurrentProfile } = useAppStore();
+  const { updatePoll, deletePoll, markPollSent, resetPoll, addNotification, sendToTargetWindow, automationSupported, isEditMode, getCurrentProfile } = useAppStore();
   const currentProfile = getCurrentProfile();
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(poll.title);
@@ -36,18 +36,9 @@ function PollItem({ dayId, sectionId, poll }: PollItemProps) {
   };
 
   const handleFocusAndPaste = async () => {
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
-
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
+    const result = await sendToTargetWindow(
       poll.content,
-      windowTarget.pressEnterAfterPaste
+      currentProfile.settings.windowTarget.pressEnterAfterPaste
     );
 
     if (result.success) {
@@ -129,7 +120,7 @@ function PollItem({ dayId, sectionId, poll }: PollItemProps) {
         <button
           className="poll-action-btn"
           onClick={handleFocusAndPaste}
-          title="Focus window and paste"
+          title={automationSupported ? 'Focus window and paste' : 'Copy to clipboard (auto-paste isn\'t available on this platform)'}
         >
           <img src={iconSlack} alt="Focus & Paste" className="poll-action-icon" />
         </button>

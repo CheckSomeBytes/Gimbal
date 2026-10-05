@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOWS);
   },
 
+  isAutomationSupported: (): Promise<boolean> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.IS_AUTOMATION_SUPPORTED);
+  },
+
   openCountdownTimer: (
     totalMinutes: number,
     message: string,
@@ -191,6 +195,7 @@ declare global {
       ) => Promise<{ success: boolean; error?: string }>;
       getAppPath: () => Promise<string>;
       getWindowList: () => Promise<{ title: string; processName: string }[]>;
+      isAutomationSupported: () => Promise<boolean>;
       openCountdownTimer: (
         totalMinutes: number,
         message: string,

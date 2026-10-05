@@ -192,6 +192,7 @@ export const IPC_CHANNELS = {
   // Window
   FOCUS_AND_PASTE: 'window:focus-paste',
   GET_WINDOWS: 'window:get-list',
+  IS_AUTOMATION_SUPPORTED: 'window:automation-supported',
   OPEN_COUNTDOWN_TIMER: 'window:open-countdown',
 
   // App

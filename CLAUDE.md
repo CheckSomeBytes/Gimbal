@@ -48,6 +48,7 @@ Items (Links and Notes) are stored as a union type `SectionItem` in a single `it
 - `link:check/check-all/check-result` - Link health checking (HEAD then GET fallback, 10s timeout)
 - `window:focus-paste` - PowerShell automation to focus window by title pattern and simulate Ctrl+V
 - `window:get-list` - Enumerate open windows via PowerShell
+- `window:automation-supported` - Whether this platform can focus another window and paste
 - `window:open-countdown` - Standalone countdown timer window
 
 ### Window Automation
@@ -91,5 +92,6 @@ Five preset 8-bit themes available, plus custom theme editor. Themes use CSS cus
 - Link checking uses streaming results via IPC (results sent individually, not batched)
 - 500ms delay between link checks to avoid rate limiting
 - Title fetching uses native `fetch` API for speed; link checking uses Electron's `net` module
+- Send/paste buttons call the store's `sendToTargetWindow` action, not `electronAPI.focusAndPaste` directly. Where auto-paste isn't supported (`automationSupported` is false) it copies to the clipboard and notifies instead, returning `copiedOnly: true` so callers skip their "sent" message. Buttons are relabelled from SEND to COPY in that case.
 - Edit mode enables multi-select for bulk move/delete operations
 - Validation modal prompts user if app hasn't been launched in >4 days
