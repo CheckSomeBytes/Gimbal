@@ -77,6 +77,7 @@ The macOS backend (`mac.ts`) runs AppleScript against System Events via `osascri
 - Location: `data/config.json` (in app folder)
 - Format: JSON with automatic migration from single-profile to multi-profile format
 - Persists on every state change
+- Backup folder: always go through `getBackupDirectory()` in `main.ts`, never `backupSettings.backupDirectory` directly. The configured folder can come from another computer or OS (e.g. a Windows path on macOS), so `src/main/backupDirectory.ts` falls back to the default when it isn't a native absolute path or can't be written. The setting itself is left unchanged, and Settings shows where backups actually go.
 
 ## Component Organization
 

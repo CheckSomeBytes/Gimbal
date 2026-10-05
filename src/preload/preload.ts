@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { AppConfig, AutomationSupport, IPC_CHANNELS, LinkCheckResult, BackupMetadata, BackupResult } from '../shared/types';
+import {
+  AppConfig,
+  AutomationSupport,
+  IPC_CHANNELS,
+  LinkCheckResult,
+  BackupMetadata,
+  BackupResult,
+  ResolvedBackupDirectory,
+} from '../shared/types';
 
 // Expose protected methods to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -171,6 +179,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_GET_DEFAULT_DIRECTORY);
   },
 
+  resolveBackupDirectory: (configured: string): Promise<ResolvedBackupDirectory> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESOLVE_DIRECTORY, configured);
+  },
+
   onBackupCreated: (callback: (metadata: BackupMetadata) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, metadata: BackupMetadata) => callback(metadata);
     ipcRenderer.on(IPC_CHANNELS.BACKUP_CREATED, handler);
@@ -237,6 +249,7 @@ declare global {
       deleteBackup: (filepath: string) => Promise<{ success: boolean; error?: string }>;
       selectBackupDirectory: () => Promise<string | null>;
       getDefaultBackupDirectory: () => Promise<string>;
+      resolveBackupDirectory: (configured: string) => Promise<ResolvedBackupDirectory>;
       onBackupCreated: (callback: (metadata: BackupMetadata) => void) => () => void;
     };
   }

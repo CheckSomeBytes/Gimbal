@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { DEFAULT_THEME, Theme, ThemeColors, PRESET_THEMES, TIMEZONES, ScheduledTime, FontSize, BackupMetadata } from '../../../shared/types';
+import { DEFAULT_THEME, Theme, ThemeColors, PRESET_THEMES, TIMEZONES, ScheduledTime, FontSize, BackupMetadata, ResolvedBackupDirectory } from '../../../shared/types';
 import { createWindowTitleMatcher } from '../../../shared/windowMatch';
 import './SettingsModal.css';
 
@@ -107,6 +107,24 @@ function SettingsModal() {
 
   // Backup state
   const [backupList, setBackupList] = useState<BackupMetadata[]>([]);
+  const [resolvedBackupDir, setResolvedBackupDir] = useState<ResolvedBackupDirectory | null>(null);
+
+  // The saved backup folder may not exist on this computer (e.g. a Windows
+  // path on a Mac); ask the main process where backups actually go.
+  const configuredBackupDir = settings.backupSettings?.backupDirectory || '';
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    let cancelled = false;
+    window.electronAPI
+      .resolveBackupDirectory(configuredBackupDir)
+      .then((resolved) => {
+        if (!cancelled) setResolvedBackupDir(resolved);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isSettingsOpen, configuredBackupDir]);
   const [isLoadingBackups, setIsLoadingBackups] = useState(false);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isBackupHistoryCollapsed, setIsBackupHistoryCollapsed] = useState(true);
@@ -2001,6 +2019,12 @@ function SettingsModal() {
                     BROWSE
                   </button>
                 </div>
+                {resolvedBackupDir?.unavailable && (
+                  <p className="settings-help">
+                    ⚠ This folder isn't available on this computer, so backups are saved to{' '}
+                    {resolvedBackupDir.directory} instead. Click BROWSE to choose another folder.
+                  </p>
+                )}
               </div>
 
               {settings.backupSettings?.lastBackupTime && (
@@ -2084,7 +2108,7 @@ function SettingsModal() {
                         ))}
                       </div>
                       <p className="settings-help">
-                        Backup directory: {settings.backupSettings?.backupDirectory || 'Loading...'}
+                        Backup directory: {resolvedBackupDir?.directory || 'Loading...'}
                       </p>
                     </>
                   )}

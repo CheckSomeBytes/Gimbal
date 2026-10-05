@@ -11,12 +11,14 @@ import {
   BackupMetadata,
   BackupResult,
 } from '../shared/types';
+import { resolveBackupDirectory } from './backupDirectory';
 import { focusAndPaste, getAutomationSupport, getWindowList, requestAutomationAccess } from './automation';
 
 let mainWindow: BrowserWindow | null = null;
 let countdownWindow: BrowserWindow | null = null;
 let backupTimerHandle: NodeJS.Timeout | null = null;
 let activeBackupTimerSignature: string | null = null;
+let warnedUnavailableBackupDir: string | null = null;
 
 // Where config is stored.
 //
@@ -308,6 +310,22 @@ function getDefaultBackupDirectory(): string {
   return current;
 }
 
+// The backup folder to use for the current profile: the configured one when
+// it's usable on this computer, otherwise the default (see backupDirectory.ts).
+function getBackupDirectory(config: AppConfig): string {
+  const profile = config.profiles.find((p) => p.id === config.currentProfileId);
+  const resolved = resolveBackupDirectory(
+    profile?.settings.backupSettings?.backupDirectory,
+    getDefaultBackupDirectory
+  );
+  // Called on every config save (via the timer signature), so warn once per path.
+  if (resolved.unavailable && resolved.unavailable !== warnedUnavailableBackupDir) {
+    warnedUnavailableBackupDir = resolved.unavailable;
+    console.warn(`[Backup] "${resolved.unavailable}" isn't usable here, using ${resolved.directory}`);
+  }
+  return resolved.directory;
+}
+
 // Calculate SHA256 hash of config for change detection
 function calculateConfigHash(config: AppConfig): string {
   const configStr = JSON.stringify(config);
@@ -485,7 +503,7 @@ function getBackupTimerSignature(config: AppConfig): string {
   const profile = config.profiles.find((p) => p.id === config.currentProfileId);
   const s = profile?.settings.backupSettings;
   if (!s?.enabled) return 'disabled';
-  return `enabled:${s.intervalMinutes}:${s.backupDirectory || getDefaultBackupDirectory()}`;
+  return `enabled:${s.intervalMinutes}:${getBackupDirectory(config)}`;
 }
 
 // Start the automatic backup timer
@@ -528,7 +546,7 @@ function startBackupTimer(config: AppConfig): void {
     }
 
     // Create backup
-    const directory = latestSettings.backupDirectory || getDefaultBackupDirectory();
+    const directory = getBackupDirectory(latestConfig);
     const result = createBackup(latestConfig, directory);
 
     if (result.success) {
@@ -800,11 +818,14 @@ function setupIPC(): void {
     return getDefaultBackupDirectory();
   });
 
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RESOLVE_DIRECTORY, (_, configured: string) => {
+    return resolveBackupDirectory(configured, getDefaultBackupDirectory);
+  });
+
   ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE_MANUAL, async (): Promise<BackupResult> => {
     const config = loadConfig();
     const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-    const directory =
-      currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
+    const directory = getBackupDirectory(config);
 
     const result = createBackup(config, directory);
 
@@ -823,12 +844,7 @@ function setupIPC(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (): Promise<BackupMetadata[]> => {
-    const config = loadConfig();
-    const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-    const directory =
-      currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
-
-    return listBackups(directory);
+    return listBackups(getBackupDirectory(loadConfig()));
   });
 
   ipcMain.handle(
@@ -1206,7 +1222,7 @@ app.whenReady().then(() => {
   // Initialize backup system
   const config = loadConfig();
   const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-  const backupDir = currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
+  const backupDir = getBackupDirectory(config);
 
   // Ensure backup directory exists
   if (!existsSync(backupDir)) {

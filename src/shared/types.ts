@@ -44,6 +44,13 @@ export interface BackupMetadata {
   dayCount: number;
 }
 
+// Where backups actually go. `unavailable` is set when the configured folder
+// can't be used on this computer and the default is used instead.
+export interface ResolvedBackupDirectory {
+  directory: string;
+  unavailable?: string;
+}
+
 export interface BackupResult {
   success: boolean;
   error?: string;
@@ -221,6 +228,7 @@ export const IPC_CHANNELS = {
   BACKUP_DELETE: 'backup:delete',
   BACKUP_SELECT_DIRECTORY: 'backup:select-directory',
   BACKUP_GET_DEFAULT_DIRECTORY: 'backup:get-default-directory',
+  BACKUP_RESOLVE_DIRECTORY: 'backup:resolve-directory',
   BACKUP_CREATED: 'backup:created',
 } as const;
 
