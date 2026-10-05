@@ -19,6 +19,9 @@ export interface WindowAutomation {
   // Null when auto-paste works here, otherwise a sentence for the user saying
   // why not and, where possible, how to fix it.
   unsupportedReason(): string | null;
+  // For platforms where the user can grant a permission to fix it: asks the
+  // OS to prompt for it.
+  requestAccess?(): void;
   listWindows(): Promise<WindowInfo[]>;
   focusAndPaste(pattern: string, matchMode: MatchMode, pressEnter: boolean): Promise<PasteResult>;
 }

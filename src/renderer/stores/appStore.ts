@@ -65,6 +65,8 @@ interface AppState {
   automationSupported: boolean;
   // Why auto-paste is unavailable, for Settings to show. Null when supported.
   automationUnsupportedReason: string | null;
+  // True when granting an OS permission would turn auto-paste on (macOS).
+  automationCanRequestAccess: boolean;
   _configLoadStarted: boolean;
 
   // Actions
@@ -143,6 +145,8 @@ interface AppState {
   openSettingsToTab: (tab: string) => void;
   addNotification: (message: string, type: 'info' | 'success' | 'error') => void;
   sendToTargetWindow: (text: string, pressEnter?: boolean) => Promise<SendToTargetResult>;
+  refreshAutomationSupport: () => Promise<void>;
+  requestAutomationAccess: () => Promise<void>;
   removeNotification: (id: string) => void;
   closeValidationModal: () => void;
   updateLastLaunchDate: () => void;
@@ -193,6 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isTodoPopupOpen: false,
   automationSupported: true,
   automationUnsupportedReason: null,
+  automationCanRequestAccess: false,
 
   loadConfig: async () => {
     if (get()._configLoadStarted) return; // Prevent duplicate calls (e.g., React StrictMode)
@@ -200,12 +205,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const loadedConfig = await window.electronAPI.loadConfig();
 
-      window.electronAPI
-        .getAutomationSupport()
-        .then(({ supported, reason }) =>
-          set({ automationSupported: supported, automationUnsupportedReason: reason ?? null })
-        )
-        .catch(() => {});
+      get().refreshAutomationSupport();
+      // Permissions can change while the app runs (e.g. granting macOS
+      // Accessibility in System Settings), so check again on return.
+      window.addEventListener('focus', () => get().refreshAutomationSupport());
 
       // Migrate from old format (settings/days at root) to new profile format
       let config: AppConfig;
@@ -1637,6 +1640,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       text,
       pressEnter
     );
+  },
+
+  refreshAutomationSupport: async () => {
+    try {
+      const { supported, reason, canRequestAccess } = await window.electronAPI.getAutomationSupport();
+      set({
+        automationSupported: supported,
+        automationUnsupportedReason: reason ?? null,
+        automationCanRequestAccess: canRequestAccess ?? false,
+      });
+    } catch {
+      // Keep the last known state
+    }
+  },
+
+  requestAutomationAccess: async () => {
+    await window.electronAPI.requestAutomationAccess();
+    await get().refreshAutomationSupport();
   },
 
   removeNotification: (id) => {

@@ -87,6 +87,7 @@ export const FONT_SIZE_PRESETS_MODERN: Record<FontSize, { xs: number; sm: number
 export interface AutomationSupport {
   supported: boolean;
   reason?: string; // Shown to the user when unsupported
+  canRequestAccess?: boolean; // True when granting a permission would fix it
 }
 
 export interface WindowTarget {
@@ -199,6 +200,7 @@ export const IPC_CHANNELS = {
   FOCUS_AND_PASTE: 'window:focus-paste',
   GET_WINDOWS: 'window:get-list',
   GET_AUTOMATION_SUPPORT: 'window:automation-support',
+  REQUEST_AUTOMATION_ACCESS: 'window:request-automation-access',
   OPEN_COUNTDOWN_TIMER: 'window:open-countdown',
 
   // App

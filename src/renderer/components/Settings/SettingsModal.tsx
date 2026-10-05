@@ -35,6 +35,8 @@ function SettingsModal() {
     setSettingsTab,
     automationSupported,
     automationUnsupportedReason,
+    automationCanRequestAccess,
+    requestAutomationAccess,
   } = useAppStore();
 
   const currentProfile = getCurrentProfile();
@@ -1370,11 +1372,20 @@ function SettingsModal() {
                   </div>
                 </>
               ) : (
-                <p className="settings-help">
-                  {automationUnsupportedReason || "Auto-paste isn't available on this platform."}{' '}
-                  Send buttons copy to the clipboard instead, so you can paste into your
-                  target window yourself.
-                </p>
+                <>
+                  <p className="settings-help">
+                    {automationUnsupportedReason || "Auto-paste isn't available on this platform."}{' '}
+                    Send buttons copy to the clipboard instead, so you can paste into your
+                    target window yourself.
+                  </p>
+                  {automationCanRequestAccess && (
+                    <div className="settings-actions">
+                      <button className="btn btn--secondary" onClick={requestAutomationAccess}>
+                        GRANT ACCESS
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
 
               <h3 className="settings-section-title">POLLS</h3>

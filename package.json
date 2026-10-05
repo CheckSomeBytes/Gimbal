@@ -51,6 +51,11 @@
       "certificateFile": null,
       "certificatePassword": null
     },
+    "mac": {
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Gimbal controls System Events to bring your target window to the front and paste links into it."
+      }
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

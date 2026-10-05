@@ -3,6 +3,7 @@ import { AutomationSupport } from '../../shared/types';
 import { MatchMode, PasteResult, WindowAutomation, WindowInfo } from './types';
 import { windowsAutomation } from './windows';
 import { linuxAutomation } from './linux';
+import { macAutomation } from './mac';
 import { unsupportedAutomation } from './unsupported';
 
 export type { MatchMode, PasteResult, WindowInfo } from './types';
@@ -13,6 +14,8 @@ function selectBackend(): WindowAutomation {
       return windowsAutomation;
     case 'linux':
       return linuxAutomation;
+    case 'darwin':
+      return macAutomation;
     default:
       return unsupportedAutomation;
   }
@@ -22,7 +25,12 @@ const backend = selectBackend();
 
 export function getAutomationSupport(): AutomationSupport {
   const reason = backend.unsupportedReason();
-  return reason === null ? { supported: true } : { supported: false, reason };
+  if (reason === null) return { supported: true };
+  return { supported: false, reason, canRequestAccess: backend.requestAccess !== undefined };
+}
+
+export function requestAutomationAccess(): void {
+  backend.requestAccess?.();
 }
 
 export function getWindowList(): Promise<WindowInfo[]> {

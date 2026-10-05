@@ -49,6 +49,7 @@ Items (Links and Notes) are stored as a union type `SectionItem` in a single `it
 - `window:focus-paste` - PowerShell automation to focus window by title pattern and simulate Ctrl+V
 - `window:get-list` - Enumerate open windows via PowerShell
 - `window:automation-support` - Whether this platform can focus another window and paste, with a reason when it can't
+- `window:request-automation-access` - Ask the OS to prompt for the permission auto-paste needs (macOS Accessibility)
 - `window:open-countdown` - Standalone countdown timer window
 
 ### Window Automation
@@ -61,6 +62,8 @@ The Windows backend (`windows.ts`) uses PowerShell for all Windows API interacti
 - No native Node bindings required
 
 The Linux backend (`linux.ts`) works on X11 only, using `wmctrl` (list and activate windows) and `xdotool` (send Ctrl+V / Enter). Under Wayland, or when either tool is missing, it reports itself unsupported with a reason that Settings shows.
+
+The macOS backend (`mac.ts`) runs AppleScript against System Events via `osascript`, passing the target pid and title as script arguments. It needs Accessibility permission, checked live with `systemPreferences.isTrustedAccessibilityClient` (the renderer re-checks on window focus, and Settings offers GRANT ACCESS), plus Automation permission for System Events, which needs `NSAppleEventsUsageDescription` in the packaged app's Info.plist (set under `build.mac.extendInfo` in `package.json`).
 
 ### Storage
 - Location: `data/config.json` (in app folder)

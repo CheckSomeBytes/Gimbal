@@ -11,7 +11,7 @@ import {
   BackupMetadata,
   BackupResult,
 } from '../shared/types';
-import { focusAndPaste, getAutomationSupport, getWindowList } from './automation';
+import { focusAndPaste, getAutomationSupport, getWindowList, requestAutomationAccess } from './automation';
 
 let mainWindow: BrowserWindow | null = null;
 let countdownWindow: BrowserWindow | null = null;
@@ -688,6 +688,10 @@ function setupIPC(): void {
 
   ipcMain.handle(IPC_CHANNELS.GET_AUTOMATION_SUPPORT, () => {
     return getAutomationSupport();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REQUEST_AUTOMATION_ACCESS, () => {
+    requestAutomationAccess();
   });
 
   ipcMain.handle(

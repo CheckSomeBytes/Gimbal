@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.GET_AUTOMATION_SUPPORT);
   },
 
+  requestAutomationAccess: (): Promise<void> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.REQUEST_AUTOMATION_ACCESS);
+  },
+
   openCountdownTimer: (
     totalMinutes: number,
     message: string,
@@ -196,6 +200,7 @@ declare global {
       getAppPath: () => Promise<string>;
       getWindowList: () => Promise<{ title: string; processName: string }[]>;
       getAutomationSupport: () => Promise<AutomationSupport>;
+      requestAutomationAccess: () => Promise<void>;
       openCountdownTimer: (
         totalMinutes: number,
         message: string,
