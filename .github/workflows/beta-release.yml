@@ -45,7 +45,7 @@ jobs:
           $pkg.build.publish = @{
             provider = "github"
             owner = "CheckSomeBytes"
-            repo = "TeachersPet"
+            repo = "Gimbal"
             channel = "beta"
           }
           $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
