@@ -9,8 +9,19 @@ permissions:
   contents: write
 
 jobs:
+  # See release.yml: one build per platform, then a single upload.
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -39,24 +50,83 @@ jobs:
           }
           $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
 
-      - name: Package application
+      - name: Configure macOS signing
+        if: matrix.platform == 'mac'
+        shell: bash
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run package
-
-      - name: Remove latest.yml to prevent stable channel pollution
-        shell: pwsh
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if (Test-Path dist/latest.yml) { Remove-Item dist/latest.yml }
+          # Signing env vars are only exported when the secrets exist:
+          # electron-builder treats an empty CSC_LINK as set and fails.
+          if [ -z "$MAC_CSC_LINK" ]; then
+            echo "No MAC_CSC_LINK secret: the app will only be ad-hoc signed (build/afterPack.js)"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Leave CSC_IDENTITY_AUTO_DISCOVERY unset here: when it's false,
+          # electron-builder ignores the CSC_LINK certificate too.
+          {
+            echo "CSC_LINK<<CSC_LINK_EOF"
+            echo "$MAC_CSC_LINK"
+            echo "CSC_LINK_EOF"
+            echo "CSC_KEY_PASSWORD=$MAC_CSC_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_SPECIFIC_PASSWORD"
+              echo "NOTARIZE_ARGS=-c.mac.notarize.teamId=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+          else
+            echo "Apple notarization secrets not set: signing without notarizing"
+          fi
+
+      - name: Disable code signing discovery
+        if: matrix.platform != 'mac'
+        shell: bash
+        run: echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+
+      - name: Package application
+        shell: bash
+        run: npx electron-builder --${{ matrix.platform }} --publish never ${NOTARIZE_ARGS:+"$NOTARIZE_ARGS"}
+
+      - name: Remove latest*.yml to prevent stable channel pollution
+        shell: bash
+        run: rm -f dist/latest.yml dist/latest-mac.yml dist/latest-linux.yml
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.platform }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.blockmap
+            dist/beta*.yml
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build output
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Upload Beta Release Assets
         uses: softprops/action-gh-release@v3
         with:
-          files: |
-            dist/*.exe
-            dist/beta.yml
-            dist/builder-debug.yml
+          files: dist/*
           prerelease: true
           name: Beta ${{ github.ref_name }}
         env:
