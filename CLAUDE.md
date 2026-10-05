@@ -48,17 +48,19 @@ Items (Links and Notes) are stored as a union type `SectionItem` in a single `it
 - `link:check/check-all/check-result` - Link health checking (HEAD then GET fallback, 10s timeout)
 - `window:focus-paste` - PowerShell automation to focus window by title pattern and simulate Ctrl+V
 - `window:get-list` - Enumerate open windows via PowerShell
-- `window:automation-supported` - Whether this platform can focus another window and paste
+- `window:automation-support` - Whether this platform can focus another window and paste, with a reason when it can't
 - `window:open-countdown` - Standalone countdown timer window
 
 ### Window Automation
-Window listing and focus-and-paste live in `src/main/automation/`, behind the `WindowAutomation` interface (`isSupported`, `listWindows`, `focusAndPaste`). `index.ts` picks a backend by `process.platform` and always copies the text to the clipboard first; platforms without a backend fall back to `unsupported.ts`. Shared title matching is in `src/shared/windowMatch.ts`.
+Window listing and focus-and-paste live in `src/main/automation/`, behind the `WindowAutomation` interface (`unsupportedReason`, `listWindows`, `focusAndPaste`). `index.ts` picks a backend by `process.platform` and always copies the text to the clipboard first; platforms without a backend fall back to `unsupported.ts`. Shared title matching is in `src/shared/windowMatch.ts`.
 
 The Windows backend (`windows.ts`) uses PowerShell for all Windows API interactions:
 - Window enumeration via `Get-Process`
 - Window matching supports exact, contains, and regex modes
 - Focus and paste simulates Ctrl+V after bringing window to foreground
 - No native Node bindings required
+
+The Linux backend (`linux.ts`) works on X11 only, using `wmctrl` (list and activate windows) and `xdotool` (send Ctrl+V / Enter). Under Wayland, or when either tool is missing, it reports itself unsupported with a reason that Settings shows.
 
 ### Storage
 - Location: `data/config.json` (in app folder)

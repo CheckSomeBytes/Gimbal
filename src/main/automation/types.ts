@@ -16,7 +16,9 @@ export interface PasteResult {
 // when focusAndPaste is called, so a backend only has to find the window,
 // bring it to the front and send the paste keystroke.
 export interface WindowAutomation {
-  isSupported(): boolean;
+  // Null when auto-paste works here, otherwise a sentence for the user saying
+  // why not and, where possible, how to fix it.
+  unsupportedReason(): string | null;
   listWindows(): Promise<WindowInfo[]>;
   focusAndPaste(pattern: string, matchMode: MatchMode, pressEnter: boolean): Promise<PasteResult>;
 }

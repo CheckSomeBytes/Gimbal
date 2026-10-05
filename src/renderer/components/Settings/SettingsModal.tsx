@@ -34,6 +34,7 @@ function SettingsModal() {
     settingsTab,
     setSettingsTab,
     automationSupported,
+    automationUnsupportedReason,
   } = useAppStore();
 
   const currentProfile = getCurrentProfile();
@@ -1370,8 +1371,9 @@ function SettingsModal() {
                 </>
               ) : (
                 <p className="settings-help">
-                  Auto-paste isn't available on this platform. Send buttons copy to the
-                  clipboard instead, so you can paste into your target window yourself.
+                  {automationUnsupportedReason || "Auto-paste isn't available on this platform."}{' '}
+                  Send buttons copy to the clipboard instead, so you can paste into your
+                  target window yourself.
                 </p>
               )}
 

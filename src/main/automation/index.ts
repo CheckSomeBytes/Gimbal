@@ -1,6 +1,8 @@
 import { clipboard } from 'electron';
+import { AutomationSupport } from '../../shared/types';
 import { MatchMode, PasteResult, WindowAutomation, WindowInfo } from './types';
 import { windowsAutomation } from './windows';
+import { linuxAutomation } from './linux';
 import { unsupportedAutomation } from './unsupported';
 
 export type { MatchMode, PasteResult, WindowInfo } from './types';
@@ -9,6 +11,8 @@ function selectBackend(): WindowAutomation {
   switch (process.platform) {
     case 'win32':
       return windowsAutomation;
+    case 'linux':
+      return linuxAutomation;
     default:
       return unsupportedAutomation;
   }
@@ -16,8 +20,9 @@ function selectBackend(): WindowAutomation {
 
 const backend = selectBackend();
 
-export function isAutomationSupported(): boolean {
-  return backend.isSupported();
+export function getAutomationSupport(): AutomationSupport {
+  const reason = backend.unsupportedReason();
+  return reason === null ? { supported: true } : { supported: false, reason };
 }
 
 export function getWindowList(): Promise<WindowInfo[]> {

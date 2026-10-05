@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { AppConfig, IPC_CHANNELS, LinkCheckResult, BackupMetadata, BackupResult } from '../shared/types';
+import { AppConfig, AutomationSupport, IPC_CHANNELS, LinkCheckResult, BackupMetadata, BackupResult } from '../shared/types';
 
 // Expose protected methods to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -67,8 +67,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOWS);
   },
 
-  isAutomationSupported: (): Promise<boolean> => {
-    return ipcRenderer.invoke(IPC_CHANNELS.IS_AUTOMATION_SUPPORTED);
+  getAutomationSupport: (): Promise<AutomationSupport> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.GET_AUTOMATION_SUPPORT);
   },
 
   openCountdownTimer: (
@@ -195,7 +195,7 @@ declare global {
       ) => Promise<{ success: boolean; error?: string }>;
       getAppPath: () => Promise<string>;
       getWindowList: () => Promise<{ title: string; processName: string }[]>;
-      isAutomationSupported: () => Promise<boolean>;
+      getAutomationSupport: () => Promise<AutomationSupport>;
       openCountdownTimer: (
         totalMinutes: number,
         message: string,

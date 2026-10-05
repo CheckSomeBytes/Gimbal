@@ -63,6 +63,8 @@ interface AppState {
   // Whether this platform can focus another window and paste into it.
   // Assumed true until the main process says otherwise.
   automationSupported: boolean;
+  // Why auto-paste is unavailable, for Settings to show. Null when supported.
+  automationUnsupportedReason: string | null;
   _configLoadStarted: boolean;
 
   // Actions
@@ -190,6 +192,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openLabNotesLabNumber: null,
   isTodoPopupOpen: false,
   automationSupported: true,
+  automationUnsupportedReason: null,
 
   loadConfig: async () => {
     if (get()._configLoadStarted) return; // Prevent duplicate calls (e.g., React StrictMode)
@@ -198,8 +201,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const loadedConfig = await window.electronAPI.loadConfig();
 
       window.electronAPI
-        .isAutomationSupported()
-        .then((supported) => set({ automationSupported: supported }))
+        .getAutomationSupport()
+        .then(({ supported, reason }) =>
+          set({ automationSupported: supported, automationUnsupportedReason: reason ?? null })
+        )
         .catch(() => {});
 
       // Migrate from old format (settings/days at root) to new profile format

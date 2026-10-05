@@ -83,6 +83,12 @@ export const FONT_SIZE_PRESETS_MODERN: Record<FontSize, { xs: number; sm: number
   large: { xs: 14, sm: 16, base: 18, lg: 20 },
 };
 
+// Whether this platform can focus another window and paste into it.
+export interface AutomationSupport {
+  supported: boolean;
+  reason?: string; // Shown to the user when unsupported
+}
+
 export interface WindowTarget {
   matchMode: 'exact' | 'contains' | 'regex';
   pattern: string;
@@ -192,7 +198,7 @@ export const IPC_CHANNELS = {
   // Window
   FOCUS_AND_PASTE: 'window:focus-paste',
   GET_WINDOWS: 'window:get-list',
-  IS_AUTOMATION_SUPPORTED: 'window:automation-supported',
+  GET_AUTOMATION_SUPPORT: 'window:automation-support',
   OPEN_COUNTDOWN_TIMER: 'window:open-countdown',
 
   // App

@@ -118,7 +118,7 @@ if ($proc -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
 }
 
 export const windowsAutomation: WindowAutomation = {
-  isSupported: () => true,
+  unsupportedReason: () => null,
   listWindows,
   focusAndPaste,
 };
