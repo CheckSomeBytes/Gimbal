@@ -39,6 +39,15 @@ function aggregateLinkStatus(entries: AdditionalUrl[]): LinkStatus {
   return 'unchecked';
 }
 
+export interface SendToTargetResult {
+  success: boolean;
+  // True when auto-paste isn't available on this platform and the text was
+  // only copied to the clipboard. The store has already told the user to
+  // paste it themselves, so callers should skip their own success message.
+  copiedOnly?: boolean;
+  error?: string;
+}
+
 interface AppState {
   config: AppConfig;
   selectedDayId: string | null;
@@ -51,6 +60,13 @@ interface AppState {
   selectedSectionIds: Set<string>;
   isBreakAlertActive: boolean;
   showValidationModal: boolean;
+  // Whether this platform can focus another window and paste into it.
+  // Assumed true until the main process says otherwise.
+  automationSupported: boolean;
+  // Why auto-paste is unavailable, for Settings to show. Null when supported.
+  automationUnsupportedReason: string | null;
+  // True when granting an OS permission would turn auto-paste on (macOS).
+  automationCanRequestAccess: boolean;
   _configLoadStarted: boolean;
 
   // Actions
@@ -128,6 +144,9 @@ interface AppState {
   toggleSettings: () => void;
   openSettingsToTab: (tab: string) => void;
   addNotification: (message: string, type: 'info' | 'success' | 'error') => void;
+  sendToTargetWindow: (text: string, pressEnter?: boolean) => Promise<SendToTargetResult>;
+  refreshAutomationSupport: () => Promise<void>;
+  requestAutomationAccess: () => Promise<void>;
   removeNotification: (id: string) => void;
   closeValidationModal: () => void;
   updateLastLaunchDate: () => void;
@@ -176,12 +195,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsTab: 'profiles',
   openLabNotesLabNumber: null,
   isTodoPopupOpen: false,
+  automationSupported: true,
+  automationUnsupportedReason: null,
+  automationCanRequestAccess: false,
 
   loadConfig: async () => {
     if (get()._configLoadStarted) return; // Prevent duplicate calls (e.g., React StrictMode)
     set({ _configLoadStarted: true, isLoading: true });
     try {
       const loadedConfig = await window.electronAPI.loadConfig();
+
+      get().refreshAutomationSupport();
+      // Permissions can change while the app runs (e.g. granting macOS
+      // Accessibility in System Settings), so check again on return.
+      window.addEventListener('focus', () => get().refreshAutomationSupport());
 
       // Migrate from old format (settings/days at root) to new profile format
       let config: AppConfig;
@@ -1586,6 +1613,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     setTimeout(() => {
       get().removeNotification(id);
     }, 3000);
+  },
+
+  // Sends text to the window configured in the current profile's window
+  // target. Where auto-paste isn't supported, copies the text instead and
+  // tells the user to paste it.
+  sendToTargetWindow: async (text, pressEnter = false) => {
+    if (!get().automationSupported) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        return { success: false, error: 'Failed to copy to clipboard' };
+      }
+      get().addNotification('Copied to clipboard — paste it into your target window', 'info');
+      return { success: true, copiedOnly: true };
+    }
+
+    const { windowTarget } = get().getCurrentProfile().settings;
+    if (!windowTarget.pattern) {
+      return { success: false, error: 'No window pattern configured. Go to Settings.' };
+    }
+
+    return window.electronAPI.focusAndPaste(
+      windowTarget.pattern,
+      windowTarget.matchMode,
+      text,
+      pressEnter
+    );
+  },
+
+  refreshAutomationSupport: async () => {
+    try {
+      const { supported, reason, canRequestAccess } = await window.electronAPI.getAutomationSupport();
+      set({
+        automationSupported: supported,
+        automationUnsupportedReason: reason ?? null,
+        automationCanRequestAccess: canRequestAccess ?? false,
+      });
+    } catch {
+      // Keep the last known state
+    }
+  },
+
+  requestAutomationAccess: async () => {
+    await window.electronAPI.requestAutomationAccess();
+    await get().refreshAutomationSupport();
   },
 
   removeNotification: (id) => {

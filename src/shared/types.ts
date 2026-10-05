@@ -44,6 +44,13 @@ export interface BackupMetadata {
   dayCount: number;
 }
 
+// Where backups actually go. `unavailable` is set when the configured folder
+// can't be used on this computer and the default is used instead.
+export interface ResolvedBackupDirectory {
+  directory: string;
+  unavailable?: string;
+}
+
 export interface BackupResult {
   success: boolean;
   error?: string;
@@ -82,6 +89,13 @@ export const FONT_SIZE_PRESETS_MODERN: Record<FontSize, { xs: number; sm: number
   medium: { xs: 12, sm: 14, base: 16, lg: 18 },
   large: { xs: 14, sm: 16, base: 18, lg: 20 },
 };
+
+// Whether this platform can focus another window and paste into it.
+export interface AutomationSupport {
+  supported: boolean;
+  reason?: string; // Shown to the user when unsupported
+  canRequestAccess?: boolean; // True when granting a permission would fix it
+}
 
 export interface WindowTarget {
   matchMode: 'exact' | 'contains' | 'regex';
@@ -192,6 +206,8 @@ export const IPC_CHANNELS = {
   // Window
   FOCUS_AND_PASTE: 'window:focus-paste',
   GET_WINDOWS: 'window:get-list',
+  GET_AUTOMATION_SUPPORT: 'window:automation-support',
+  REQUEST_AUTOMATION_ACCESS: 'window:request-automation-access',
   OPEN_COUNTDOWN_TIMER: 'window:open-countdown',
 
   // App
@@ -212,6 +228,7 @@ export const IPC_CHANNELS = {
   BACKUP_DELETE: 'backup:delete',
   BACKUP_SELECT_DIRECTORY: 'backup:select-directory',
   BACKUP_GET_DEFAULT_DIRECTORY: 'backup:get-default-directory',
+  BACKUP_RESOLVE_DIRECTORY: 'backup:resolve-directory',
   BACKUP_CREATED: 'backup:created',
 } as const;
 

@@ -40,3 +40,46 @@ jobs:
             exit 1
           }
           Write-Host "Build successful - artifacts created"
+
+  # Separate from build-and-test so that check keeps its name. Unsigned:
+  # electron-builder skips signing on pull requests, and the macOS app is
+  # ad-hoc signed by build/afterPack.js.
+  package-mac-linux:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package application (test)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+
+      - name: Check if build artifacts exist
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            ls dist/*.dmg dist/*.zip
+          else
+            ls dist/*.AppImage dist/*.deb
+          fi

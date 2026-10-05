@@ -3,6 +3,7 @@
   "version": "1.5.1",
   "description": "A link and notes manager for instructors",
   "author": "CheckSomeBytes",
+  "homepage": "https://github.com/CheckSomeBytes/Gimbal",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -10,7 +11,9 @@
     "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-builder",
-    "package:win": "electron-builder --win"
+    "package:win": "electron-builder --win",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux"
   },
   "dependencies": {
     "electron-updater": "^6.7.3",
@@ -51,6 +54,49 @@
       "certificateFile": null,
       "certificatePassword": null
     },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "category": "public.app-category.education",
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Gimbal controls System Events to bring your target window to the front and paste links into it."
+      }
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education",
+      "icon": "build/icons",
+      "maintainer": "CheckSomeBytes",
+      "synopsis": "Link and notes manager for instructors"
+    },
+    "deb": {
+      "recommends": [
+        "wmctrl",
+        "xdotool"
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -61,6 +107,7 @@
       "owner": "CheckSomeBytes",
       "repo": "Gimbal"
     },
+    "afterPack": "build/afterPack.js",
     "forceCodeSigning": false
   }
 }

@@ -13,7 +13,7 @@ interface LinkItemProps {
 }
 
 function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
-  const { updateLink, deleteLink, addNotification, isEditMode, selectedItemIds, toggleItemSelection, getCurrentProfile } = useAppStore();
+  const { updateLink, deleteLink, addNotification, sendToTargetWindow, automationSupported, isEditMode, selectedItemIds, toggleItemSelection, getCurrentProfile } = useAppStore();
   const currentProfile = getCurrentProfile();
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(link.customTitle || link.title);
@@ -69,19 +69,10 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
   };
 
   const handleFocusAndPaste = async (url: string, title: string) => {
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
-
     const textToPaste = `${title}\n${url}`;
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
+    const result = await sendToTargetWindow(
       textToPaste,
-      windowTarget.pressEnterAfterPaste
+      currentProfile.settings.windowTarget.pressEnterAfterPaste
     );
 
     if (!result.success) {
@@ -109,6 +100,16 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
 
   const handleSendAll = async () => {
     if (!link.additionalUrls) return;
+    // Without auto-paste each send would overwrite the clipboard, so copy
+    // them all in one go instead.
+    if (!automationSupported) {
+      const text = link.additionalUrls.map(entry => `${entry.title}\n${entry.url}`).join('\n\n');
+      const result = await sendToTargetWindow(text);
+      if (!result.success) {
+        addNotification(result.error || 'Failed to copy links', 'error');
+      }
+      return;
+    }
     for (const entry of link.additionalUrls) {
       await handleFocusAndPaste(entry.url, entry.title);
     }
@@ -346,7 +347,7 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
           <button
             className="link-action-btn"
             onClick={() => handleFocusAndPaste(link.url, displayTitle)}
-            title="Focus window and paste"
+            title={automationSupported ? 'Focus window and paste' : 'Copy to clipboard (auto-paste isn\'t available on this platform)'}
           >
             <img src={iconSlack} alt="Focus & Paste" className="link-action-icon" />
           </button>
@@ -431,7 +432,7 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
           <button
             className="link-action-btn"
             onClick={handleSendAll}
-            title="Send all to window"
+            title={automationSupported ? 'Send all to window' : 'Copy all to clipboard (auto-paste isn\'t available on this platform)'}
           >
             <img src={iconSlack} alt="Send All" className="link-action-icon link-action-icon--small" />
           </button>
@@ -489,7 +490,7 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
                 <button
                   className="link-action-btn"
                   onClick={() => handleFocusAndPaste(entry.url, entry.title)}
-                  title="Focus window and paste"
+                  title={automationSupported ? 'Focus window and paste' : 'Copy to clipboard (auto-paste isn\'t available on this platform)'}
                 >
                   <img src={iconSlack} alt="Send" className="link-action-icon link-action-icon--small" />
                 </button>

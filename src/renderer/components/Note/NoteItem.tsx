@@ -12,7 +12,7 @@ interface NoteItemProps {
 }
 
 function NoteItem({ dayId, sectionId, note }: NoteItemProps) {
-  const { updateNote, deleteNote, addNotification, isEditMode, selectedItemIds, toggleItemSelection, getCurrentProfile } = useAppStore();
+  const { updateNote, deleteNote, addNotification, sendToTargetWindow, automationSupported, isEditMode, selectedItemIds, toggleItemSelection, getCurrentProfile } = useAppStore();
   const currentProfile = getCurrentProfile();
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(note.title);
@@ -36,18 +36,9 @@ function NoteItem({ dayId, sectionId, note }: NoteItemProps) {
   };
 
   const handleFocusAndPaste = async () => {
-    const { windowTarget } = currentProfile.settings;
-
-    if (!windowTarget.pattern) {
-      addNotification('No window pattern configured. Go to Settings.', 'error');
-      return;
-    }
-
-    const result = await window.electronAPI.focusAndPaste(
-      windowTarget.pattern,
-      windowTarget.matchMode,
+    const result = await sendToTargetWindow(
       note.content,
-      windowTarget.pressEnterAfterPaste
+      currentProfile.settings.windowTarget.pressEnterAfterPaste
     );
 
     if (!result.success) {
@@ -152,7 +143,7 @@ function NoteItem({ dayId, sectionId, note }: NoteItemProps) {
         <button
           className="note-action-btn"
           onClick={handleFocusAndPaste}
-          title="Focus window and paste"
+          title={automationSupported ? 'Focus window and paste' : 'Copy to clipboard (auto-paste isn\'t available on this platform)'}
         >
           <img src={iconSlack} alt="Focus & Paste" className="note-action-icon" />
         </button>

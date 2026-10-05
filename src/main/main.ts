@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, clipboard, dialog, Menu, net } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, Menu, net } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
@@ -11,11 +11,14 @@ import {
   BackupMetadata,
   BackupResult,
 } from '../shared/types';
+import { resolveBackupDirectory } from './backupDirectory';
+import { focusAndPaste, getAutomationSupport, getWindowList, requestAutomationAccess } from './automation';
 
 let mainWindow: BrowserWindow | null = null;
 let countdownWindow: BrowserWindow | null = null;
 let backupTimerHandle: NodeJS.Timeout | null = null;
 let activeBackupTimerSignature: string | null = null;
+let warnedUnavailableBackupDir: string | null = null;
 
 // Where config is stored.
 //
@@ -159,47 +162,6 @@ async function fetchPageTitle(url: string): Promise<string> {
   }
 }
 
-// Get list of open windows (Windows only)
-async function getWindowList(): Promise<{ title: string; processName: string }[]> {
-  if (process.platform !== 'win32') {
-    return [];
-  }
-
-  const { exec } = require('child_process');
-
-  return new Promise((resolve) => {
-    const psScript = `
-      Get-Process | Where-Object { $_.MainWindowTitle -ne '' } |
-      Select-Object ProcessName, MainWindowTitle |
-      ConvertTo-Json
-    `;
-
-    exec(
-      `powershell -Command "${psScript.replace(/\n/g, ' ')}"`,
-      (error: Error | null, stdout: string) => {
-        if (error) {
-          resolve([]);
-          return;
-        }
-
-        try {
-          const result = JSON.parse(stdout);
-          // Handle single result (not an array)
-          const windows = Array.isArray(result) ? result : [result];
-          resolve(
-            windows.map((w: { ProcessName: string; MainWindowTitle: string }) => ({
-              title: w.MainWindowTitle,
-              processName: w.ProcessName,
-            }))
-          );
-        } catch {
-          resolve([]);
-        }
-      }
-    );
-  });
-}
-
 // Check if a link is accessible using Electron's net module (Chromium networking stack)
 async function checkLink(url: string): Promise<LinkCheckResult> {
   const tryRequest = (method: 'HEAD' | 'GET'): Promise<LinkCheckResult> => {
@@ -294,102 +256,6 @@ async function openInChrome(url: string): Promise<void> {
   }
 }
 
-// Focus window and paste - this requires native modules
-// For now, we'll implement a simplified version
-async function focusAndPaste(
-  pattern: string,
-  matchMode: 'exact' | 'contains' | 'regex',
-  textToPaste: string,
-  pressEnter: boolean = false
-): Promise<{ success: boolean; error?: string }> {
-  // Copy to clipboard first
-  clipboard.writeText(textToPaste);
-
-  // On Windows, we can use PowerShell to find and focus windows
-  if (process.platform === 'win32') {
-    const { execFile } = require('child_process');
-
-    return new Promise((resolve) => {
-      // Escape single quotes in the pattern for PowerShell
-      const escapedPattern = pattern.replace(/'/g, "''");
-
-      // Build the match condition based on mode
-      let matchCondition: string;
-      switch (matchMode) {
-        case 'exact':
-          matchCondition = `$_.MainWindowTitle -eq '${escapedPattern}'`;
-          break;
-        case 'contains':
-          matchCondition = `$_.MainWindowTitle -like '*${escapedPattern}*'`;
-          break;
-        case 'regex':
-          matchCondition = `$_.MainWindowTitle -match '${escapedPattern}'`;
-          break;
-      }
-
-      // Use a simpler approach: separate commands
-      const psScript = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public class Win32Helper {
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-}
-'@
-
-$allWindows = Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object ProcessName, MainWindowTitle
-Write-Host "DEBUG: Available windows:"
-$allWindows | ForEach-Object { Write-Host "  - $($_.ProcessName): $($_.MainWindowTitle)" }
-Write-Host "DEBUG: Looking for pattern '${escapedPattern}' with condition: ${matchCondition}"
-
-$proc = Get-Process | Where-Object { $_.MainWindowTitle -ne '' -and (${matchCondition}) } | Select-Object -First 1
-if ($proc -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
-    Write-Host "DEBUG: Found window - $($proc.ProcessName): $($proc.MainWindowTitle)"
-    [Win32Helper]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
-    Start-Sleep -Milliseconds 300
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.SendKeys]::SendWait('^v')
-    ${pressEnter ? `Start-Sleep -Milliseconds 100
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')` : ''}
-    Write-Output 'SUCCESS'
-} else {
-    Write-Host "DEBUG: No matching window found"
-    Write-Output 'NOTFOUND'
-}
-`;
-
-      execFile(
-        'powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
-        (error: Error | null, stdout: string, stderr: string) => {
-          if (error) {
-            console.error('PowerShell error:', error);
-            console.error('stderr:', stderr);
-            resolve({
-              success: false,
-              error: 'Failed to execute: ' + (error.message || 'Unknown error'),
-            });
-          } else if (stdout.includes('SUCCESS')) {
-            console.log('PowerShell debug output:', stdout);
-            resolve({ success: true });
-          } else {
-            console.log('PowerShell output:', stdout);
-            console.log('Pattern used:', pattern);
-            console.log('Match mode:', matchMode);
-            resolve({
-              success: false,
-              error: 'Window not found matching pattern: ' + pattern,
-            });
-          }
-        }
-      );
-    });
-  }
-
-  return { success: false, error: 'Platform not supported' };
-}
-
 function createWindow(): void {
   // Remove the application menu
   Menu.setApplicationMenu(null);
@@ -442,6 +308,22 @@ function getDefaultBackupDirectory(): string {
     return legacy;
   }
   return current;
+}
+
+// The backup folder to use for the current profile: the configured one when
+// it's usable on this computer, otherwise the default (see backupDirectory.ts).
+function getBackupDirectory(config: AppConfig): string {
+  const profile = config.profiles.find((p) => p.id === config.currentProfileId);
+  const resolved = resolveBackupDirectory(
+    profile?.settings.backupSettings?.backupDirectory,
+    getDefaultBackupDirectory
+  );
+  // Called on every config save (via the timer signature), so warn once per path.
+  if (resolved.unavailable && resolved.unavailable !== warnedUnavailableBackupDir) {
+    warnedUnavailableBackupDir = resolved.unavailable;
+    console.warn(`[Backup] "${resolved.unavailable}" isn't usable here, using ${resolved.directory}`);
+  }
+  return resolved.directory;
 }
 
 // Calculate SHA256 hash of config for change detection
@@ -621,7 +503,7 @@ function getBackupTimerSignature(config: AppConfig): string {
   const profile = config.profiles.find((p) => p.id === config.currentProfileId);
   const s = profile?.settings.backupSettings;
   if (!s?.enabled) return 'disabled';
-  return `enabled:${s.intervalMinutes}:${s.backupDirectory || getDefaultBackupDirectory()}`;
+  return `enabled:${s.intervalMinutes}:${getBackupDirectory(config)}`;
 }
 
 // Start the automatic backup timer
@@ -664,7 +546,7 @@ function startBackupTimer(config: AppConfig): void {
     }
 
     // Create backup
-    const directory = latestSettings.backupDirectory || getDefaultBackupDirectory();
+    const directory = getBackupDirectory(latestConfig);
     const result = createBackup(latestConfig, directory);
 
     if (result.success) {
@@ -822,6 +704,14 @@ function setupIPC(): void {
     return getWindowList();
   });
 
+  ipcMain.handle(IPC_CHANNELS.GET_AUTOMATION_SUPPORT, () => {
+    return getAutomationSupport();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REQUEST_AUTOMATION_ACCESS, () => {
+    requestAutomationAccess();
+  });
+
   ipcMain.handle(
     IPC_CHANNELS.OPEN_COUNTDOWN_TIMER,
     async (
@@ -928,11 +818,14 @@ function setupIPC(): void {
     return getDefaultBackupDirectory();
   });
 
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RESOLVE_DIRECTORY, (_, configured: string) => {
+    return resolveBackupDirectory(configured, getDefaultBackupDirectory);
+  });
+
   ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE_MANUAL, async (): Promise<BackupResult> => {
     const config = loadConfig();
     const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-    const directory =
-      currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
+    const directory = getBackupDirectory(config);
 
     const result = createBackup(config, directory);
 
@@ -951,12 +844,7 @@ function setupIPC(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (): Promise<BackupMetadata[]> => {
-    const config = loadConfig();
-    const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-    const directory =
-      currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
-
-    return listBackups(directory);
+    return listBackups(getBackupDirectory(loadConfig()));
   });
 
   ipcMain.handle(
@@ -1334,7 +1222,7 @@ app.whenReady().then(() => {
   // Initialize backup system
   const config = loadConfig();
   const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-  const backupDir = currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
+  const backupDir = getBackupDirectory(config);
 
   // Ensure backup directory exists
   if (!existsSync(backupDir)) {
