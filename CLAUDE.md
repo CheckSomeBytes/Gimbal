@@ -50,8 +50,10 @@ Items (Links and Notes) are stored as a union type `SectionItem` in a single `it
 - `window:get-list` - Enumerate open windows via PowerShell
 - `window:open-countdown` - Standalone countdown timer window
 
-### Windows Automation
-The app uses PowerShell for all Windows API interactions:
+### Window Automation
+Window listing and focus-and-paste live in `src/main/automation/`, behind the `WindowAutomation` interface (`isSupported`, `listWindows`, `focusAndPaste`). `index.ts` picks a backend by `process.platform` and always copies the text to the clipboard first; platforms without a backend fall back to `unsupported.ts`. Shared title matching is in `src/shared/windowMatch.ts`.
+
+The Windows backend (`windows.ts`) uses PowerShell for all Windows API interactions:
 - Window enumeration via `Get-Process`
 - Window matching supports exact, contains, and regex modes
 - Focus and paste simulates Ctrl+V after bringing window to foreground

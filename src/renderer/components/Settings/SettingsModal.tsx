@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { DEFAULT_THEME, Theme, ThemeColors, PRESET_THEMES, TIMEZONES, ScheduledTime, FontSize, BackupMetadata } from '../../../shared/types';
+import { createWindowTitleMatcher } from '../../../shared/windowMatch';
 import './SettingsModal.css';
 
 type SettingsTab = 'general' | 'profiles' | 'days' | 'theme' | 'system';
@@ -221,8 +222,7 @@ function SettingsModal() {
 
   // Dry-run the window target: reports whether the current pattern would find a
   // window, without stealing focus or pasting anything. Mirrors the matching
-  // PowerShell performs in focusAndPaste, which is case-insensitive for -eq,
-  // -like and -match alike.
+  // the automation backend performs in focusAndPaste (case-insensitive).
   const handleTestWindowTarget = async () => {
     const { pattern, matchMode } = settings.windowTarget;
 
@@ -236,25 +236,14 @@ function SettingsModal() {
     try {
       const windows = await window.electronAPI.getWindowList();
 
-      let matches: string[];
-      if (matchMode === 'regex') {
-        let re: RegExp;
-        try {
-          re = new RegExp(pattern, 'i');
-        } catch {
-          setTargetTestResult({ ok: false, message: `"${pattern}" is not a valid regular expression.` });
-          return;
-        }
-        matches = windows.filter((w) => re.test(w.title)).map((w) => w.title);
-      } else {
-        const needle = pattern.toLowerCase();
-        matches = windows
-          .filter((w) => {
-            const title = w.title.toLowerCase();
-            return matchMode === 'exact' ? title === needle : title.includes(needle);
-          })
-          .map((w) => w.title);
+      let matchesTitle: (title: string) => boolean;
+      try {
+        matchesTitle = createWindowTitleMatcher(pattern, matchMode);
+      } catch {
+        setTargetTestResult({ ok: false, message: `"${pattern}" is not a valid regular expression.` });
+        return;
       }
+      const matches = windows.filter((w) => matchesTitle(w.title)).map((w) => w.title);
 
       if (matches.length === 0) {
         setTargetTestResult({
