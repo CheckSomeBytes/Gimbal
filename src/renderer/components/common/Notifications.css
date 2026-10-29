@@ -74,6 +74,28 @@
   background-color: var(--color-surface-active);
 }
 
+/* UNDO and similar actions. Theme variables only, so it suits every theme. */
+.notification-action-btn {
+  background: transparent;
+  border: var(--border-width) solid var(--color-accent);
+  color: var(--color-accent);
+  cursor: pointer;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+
+.notification-action-btn:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.notification-action-btn:active {
+  background-color: var(--color-surface-active);
+}
+
 @keyframes slideIn {
   from {
     transform: translateX(100%);

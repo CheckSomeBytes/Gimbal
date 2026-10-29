@@ -124,6 +124,26 @@ interface SearchResult {
   matchField: 'title' | 'url' | 'content';
 }
 
+// Text sent or copied for a search result. Matches LinkItem: a link group is
+// every title/URL pair (previously only the first URL), and notes are sent as
+// plain text rather than raw markdown.
+function searchResultText(result: SearchResult): string {
+  if (result.type === 'note') {
+    return markdownToPlainText((result.item as Note).content);
+  }
+  const link = result.item as Link;
+  if (link.additionalUrls && link.additionalUrls.length > 0) {
+    return link.additionalUrls.map((entry) => `${entry.title}\n${entry.url}`).join('\n\n');
+  }
+  return `${link.customTitle || link.title}\n${link.url}`;
+}
+
+// Slack's /poll wraps the question and each option in straight double quotes,
+// so a straight quote inside one ends it early. Use typographic quotes instead.
+function pollQuoteSafe(text: string): string {
+  return text.replace(/"([^"]*)"/g, '\u201c$1\u201d').replace(/"/g, '\u201d');
+}
+
 // Format minutes as "X hr Y min" or "X min" depending on duration
 function formatDuration(minutes: number): string {
   if (minutes >= 60) {
@@ -758,15 +778,7 @@ function Header() {
       return;
     }
 
-    let textToPaste: string;
-    if (result.type === 'link') {
-      const link = result.item as Link;
-      const displayTitle = link.customTitle || link.title;
-      textToPaste = `${displayTitle}\n${link.url}`;
-    } else {
-      const note = result.item as Note;
-      textToPaste = note.content;
-    }
+    const textToPaste = searchResultText(result);
 
     const pasteResult = await window.electronAPI.focusAndPaste(
       windowTarget.pattern,
@@ -783,16 +795,7 @@ function Header() {
   const handleSearchTitleClick = async (e: React.MouseEvent, result: SearchResult) => {
     e.stopPropagation();
     try {
-      let textToCopy: string;
-      if (result.type === 'link') {
-        const link = result.item as Link;
-        const displayTitle = link.customTitle || link.title;
-        textToCopy = `${displayTitle}\n${link.url}`;
-      } else {
-        const note = result.item as Note;
-        textToCopy = note.content;
-      }
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(searchResultText(result));
       addNotification('Copied to clipboard', 'success');
     } catch {
       addNotification('Failed to copy', 'error');
@@ -824,11 +827,12 @@ function Header() {
 
   // Quick Poll helpers
   const generateQuickPollText = () => {
-    const question = quickPollQuestion.trim() || 'Your question here';
+    const question = pollQuoteSafe(quickPollQuestion.trim() || 'Your question here');
     const validOptions = quickPollOptions.filter((o) => o.text.trim());
     const optionStrings = validOptions.map((o) => {
       const emoji = o.emoji.trim();
-      return emoji ? `"${o.text.trim()}"${emoji}` : `"${o.text.trim()}"`;
+      const text = pollQuoteSafe(o.text.trim());
+      return emoji ? `"${text}"${emoji}` : `"${text}"`;
     });
     const flags: string[] = [];
     if (quickPollAnonymous) flags.push('anonymous');
@@ -960,7 +964,10 @@ function Header() {
         </button>
         <button
           className="btn btn--small btn--danger"
-          onClick={() => window.electronAPI.quitApp()}
+          // Sits next to Minimize; a misclick mid-class shouldn't close the app.
+          onClick={() => {
+            if (window.confirm('Quit Gimbal?')) window.electronAPI.quitApp();
+          }}
           title="Exit"
         >
           ✕

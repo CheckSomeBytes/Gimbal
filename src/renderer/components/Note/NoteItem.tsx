@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/appStore';
 import iconSlack from '../../assets/icon-slack.png';
 import iconClipboard from '../../assets/icon-clipboard.png';
 import './NoteItem.css';
+import { markdownToPlainText } from '../Markdown/markdown';
 
 interface NoteItemProps {
   dayId: string;
@@ -43,10 +44,12 @@ function NoteItem({ dayId, sectionId, note }: NoteItemProps) {
       return;
     }
 
+    // Notes are written in markdown but sent as plain text, as lab notes are:
+    // chat would otherwise show the raw **, [text](url) and ``` markers.
     const result = await window.electronAPI.focusAndPaste(
       windowTarget.pattern,
       windowTarget.matchMode,
-      note.content,
+      markdownToPlainText(note.content),
       windowTarget.pressEnterAfterPaste
     );
 
@@ -57,7 +60,7 @@ function NoteItem({ dayId, sectionId, note }: NoteItemProps) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(note.content);
+      await navigator.clipboard.writeText(markdownToPlainText(note.content));
       addNotification('Note copied to clipboard', 'success');
     } catch {
       addNotification('Failed to copy note', 'error');

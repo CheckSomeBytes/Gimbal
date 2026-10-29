@@ -34,10 +34,91 @@ let savesSuspended = false;
 // Only report a run of failed saves once, not on every keystroke.
 let saveFailureReported = false;
 
+// Undo for deletes. Each entry records what was removed and where, and undo
+// puts it back in the same position. Re-inserting (rather than restoring a
+// snapshot) keeps any edits made since the delete. Session only.
+type UndoEntry =
+  | { kind: 'day'; label: string; profileId: string; day: Day; index: number }
+  | { kind: 'section'; label: string; profileId: string; dayId: string; section: Section; index: number }
+  | { kind: 'item'; label: string; profileId: string; dayId: string; sectionId: string; item: SectionItem; index: number }
+  | { kind: 'poll'; label: string; profileId: string; dayId: string; sectionId: string; poll: Poll; index: number }
+  | { kind: 'profile'; label: string; profile: Profile; index: number };
+
+const UNDO_LIMIT = 20;
+const UNDO_TOAST_MS = 8000;
+const undoStack: UndoEntry[] = [];
+
+const byOrder = <T extends { order: number }>(list: T[]) => [...list].sort((a, b) => a.order - b.order);
+
+// Position of an entry in its list as displayed (sorted by order).
+const orderIndex = <T extends { id: string; order: number }>(list: T[], id: string) =>
+  byOrder(list).findIndex((x) => x.id === id);
+
+// Put an entry back at its displayed position and renumber.
+function reinsert<T extends { order: number }>(list: T[], entry: T, index: number): T[] {
+  const sorted = byOrder(list);
+  sorted.splice(Math.min(Math.max(index, 0), sorted.length), 0, entry);
+  return sorted.map((x, i) => ({ ...x, order: i }));
+}
+
+function mapProfile(config: AppConfig, profileId: string, fn: (p: Profile) => Profile): AppConfig {
+  return { ...config, profiles: config.profiles.map((p) => (p.id === profileId ? fn(p) : p)) };
+}
+
+function mapSection(
+  config: AppConfig,
+  profileId: string,
+  dayId: string,
+  sectionId: string,
+  fn: (s: Section) => Section
+): AppConfig {
+  return mapProfile(config, profileId, (p) => ({
+    ...p,
+    days: p.days.map((d) =>
+      d.id === dayId ? { ...d, sections: d.sections.map((s) => (s.id === sectionId ? fn(s) : s)) } : d
+    ),
+  }));
+}
+
+// Apply an undo entry; null if the place it came from no longer exists.
+function applyUndo(config: AppConfig, entry: UndoEntry): AppConfig | null {
+  if (entry.kind === 'profile') {
+    const profiles = [...config.profiles];
+    profiles.splice(Math.min(entry.index, profiles.length), 0, entry.profile);
+    return { ...config, profiles };
+  }
+  const profile = config.profiles.find((p) => p.id === entry.profileId);
+  if (!profile) return null;
+  if (entry.kind === 'day') {
+    return mapProfile(config, entry.profileId, (p) => ({ ...p, days: reinsert(p.days, entry.day, entry.index) }));
+  }
+  const day = profile.days.find((d) => d.id === entry.dayId);
+  if (!day) return null;
+  if (entry.kind === 'section') {
+    return mapProfile(config, entry.profileId, (p) => ({
+      ...p,
+      days: p.days.map((d) => (d.id === entry.dayId ? { ...d, sections: reinsert(d.sections, entry.section, entry.index) } : d)),
+    }));
+  }
+  if (!day.sections.some((s) => s.id === entry.sectionId)) return null;
+  if (entry.kind === 'item') {
+    return mapSection(config, entry.profileId, entry.dayId, entry.sectionId, (s) => ({
+      ...s,
+      items: reinsert(s.items, entry.item, entry.index),
+    }));
+  }
+  return mapSection(config, entry.profileId, entry.dayId, entry.sectionId, (s) => ({
+    ...s,
+    polls: reinsert(s.polls || [], entry.poll, entry.index),
+  }));
+}
+
 interface Notification {
   id: string;
   message: string;
   type: 'info' | 'success' | 'error';
+  /** Optional button, e.g. UNDO after a delete. */
+  action?: { label: string; onClick: () => void };
 }
 
 // Derive a multi-link group's overall status from its child URLs. Priority
@@ -147,7 +228,16 @@ interface AppState {
   toggleSettings: () => void;
   openSettingsToTab: (tab: string) => void;
   /** durationMs 0 keeps the notification until it is clicked. */
-  addNotification: (message: string, type: 'info' | 'success' | 'error', durationMs?: number) => void;
+  addNotification: (
+    message: string,
+    type: 'info' | 'success' | 'error',
+    durationMs?: number,
+    action?: Notification['action']
+  ) => void;
+  /** Record a delete so it can be undone, and offer UNDO in a toast. */
+  recordUndo: (entry: UndoEntry) => void;
+  /** Undo a delete: the given one (toast UNDO button) or the most recent (Ctrl+Z). */
+  undo: (entry?: UndoEntry) => void;
   removeNotification: (id: string) => void;
   closeValidationModal: () => void;
   updateLastLaunchDate: () => void;
@@ -429,6 +519,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteDay: (dayId) => {
+    const before = get().getCurrentProfile();
+    const deletedDay = before.days.find((d) => d.id === dayId);
     set((state) => {
       const currentProfile = state.config.profiles.find((p) => p.id === state.config.currentProfileId)!;
       const newDays = currentProfile.days
@@ -451,6 +543,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     get().saveConfig();
+    if (deletedDay) {
+      get().recordUndo({
+        kind: 'day',
+        label: `day "${deletedDay.name}"`,
+        profileId: before.id,
+        day: deletedDay,
+        index: orderIndex(before.days, dayId),
+      });
+    }
   },
 
   selectDay: (dayId) => {
@@ -537,6 +638,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteSection: (dayId, sectionId) => {
+    const before = get().getCurrentProfile();
+    const day = before.days.find((d) => d.id === dayId);
+    const deletedSection = day?.sections.find((sec) => sec.id === sectionId);
     set((state) => ({
       config: {
         ...state.config,
@@ -560,6 +664,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     get().saveConfig();
+    if (day && deletedSection) {
+      get().recordUndo({
+        kind: 'section',
+        label: `section "${deletedSection.name}"`,
+        profileId: before.id,
+        dayId,
+        section: deletedSection,
+        index: orderIndex(day.sections, sectionId),
+      });
+    }
   },
 
   toggleSectionCollapse: (dayId, sectionId) => {
@@ -894,6 +1008,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteLink: (dayId, sectionId, linkId) => {
+    const before = get().getCurrentProfile();
+    const section = before.days.find((d) => d.id === dayId)?.sections.find((sec) => sec.id === sectionId);
+    const deletedItem = section?.items.find((item) => item.id === linkId);
     set((state) => ({
       config: {
         ...state.config,
@@ -924,6 +1041,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     get().saveConfig();
+    if (section && deletedItem) {
+      get().recordUndo({
+        kind: 'item',
+        label: deletedItem.type === 'link'
+          ? `link "${deletedItem.customTitle || deletedItem.title}"`
+          : `note "${deletedItem.title}"`,
+        profileId: before.id,
+        dayId,
+        sectionId,
+        item: deletedItem,
+        index: orderIndex(section.items, linkId),
+      });
+    }
   },
 
   addNote: (dayId, sectionId, title, content) => {
@@ -1003,6 +1133,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteNote: (dayId, sectionId, noteId) => {
+    const before = get().getCurrentProfile();
+    const section = before.days.find((d) => d.id === dayId)?.sections.find((sec) => sec.id === sectionId);
+    const deletedItem = section?.items.find((item) => item.id === noteId);
     set((state) => ({
       config: {
         ...state.config,
@@ -1033,6 +1166,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     get().saveConfig();
+    if (section && deletedItem) {
+      get().recordUndo({
+        kind: 'item',
+        label: deletedItem.type === 'link'
+          ? `link "${deletedItem.customTitle || deletedItem.title}"`
+          : `note "${deletedItem.title}"`,
+        profileId: before.id,
+        dayId,
+        sectionId,
+        item: deletedItem,
+        index: orderIndex(section.items, noteId),
+      });
+    }
   },
 
   updateLinkStatus: (url, status, skipSave = false) => {
@@ -1163,6 +1309,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deletePoll: (dayId, sectionId, pollId) => {
+    const before = get().getCurrentProfile();
+    const section = before.days.find((d) => d.id === dayId)?.sections.find((sec) => sec.id === sectionId);
+    const deletedPoll = section?.polls?.find((poll) => poll.id === pollId);
     set((state) => ({
       config: {
         ...state.config,
@@ -1193,6 +1342,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     get().saveConfig();
+    if (section && deletedPoll) {
+      get().recordUndo({
+        kind: 'poll',
+        label: `poll "${deletedPoll.title}"`,
+        profileId: before.id,
+        dayId,
+        sectionId,
+        poll: deletedPoll,
+        index: orderIndex(section.polls || [], pollId),
+      });
+    }
   },
 
   markPollSent: (dayId, sectionId, pollId) => {
@@ -1488,8 +1648,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           p.id === config.currentProfileId ? { ...p, days: finalDays } : p
         ),
       },
+      // Clear only the item selection: MoveDialog moves selected sections in
+      // the same confirm, and clearing those here dropped them silently.
       selectedItemIds: new Set<string>(),
-      selectedSectionIds: new Set<string>(),
     });
     get().saveConfig();
     get().addNotification(`Moved ${itemsToMove.length} item(s)`, 'success');
@@ -1538,7 +1699,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           p.id === config.currentProfileId ? { ...p, days: finalDays } : p
         ),
       },
-      selectedItemIds: new Set<string>(),
+      // Clear only the section selection; selected items are moved next.
       selectedSectionIds: new Set<string>(),
     });
     get().saveConfig();
@@ -1645,10 +1806,42 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ isSettingsOpen: !state.isSettingsOpen }));
   },
 
-  addNotification: (message, type, durationMs = 3000) => {
+  recordUndo: (entry) => {
+    undoStack.push(entry);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    get().addNotification(`Deleted ${entry.label}`, 'info', UNDO_TOAST_MS, {
+      label: 'UNDO',
+      onClick: () => get().undo(entry),
+    });
+  },
+
+  undo: (requested) => {
+    const entry = requested ?? undoStack[undoStack.length - 1];
+    const position = entry ? undoStack.indexOf(entry) : -1;
+    if (!entry || position === -1) {
+      // Already undone (e.g. Ctrl+Z, then the toast's button).
+      if (!requested) get().addNotification('Nothing to undo', 'info');
+      return;
+    }
+    undoStack.splice(position, 1);
+
+    const restored = applyUndo(get().config, entry);
+    if (!restored) {
+      get().addNotification(`Can't restore ${entry.label}: the place it was deleted from no longer exists`, 'error');
+      return;
+    }
+    set({
+      config: restored,
+      ...(entry.kind === 'day' && entry.profileId === restored.currentProfileId ? { selectedDayId: entry.day.id } : {}),
+    });
+    get().saveConfig();
+    get().addNotification(`Restored ${entry.label}`, 'success');
+  },
+
+  addNotification: (message, type, durationMs = 3000, action) => {
     const id = uuidv4();
     set((state) => ({
-      notifications: [...state.notifications, { id, message, type }],
+      notifications: [...state.notifications, { id, message, type, action }],
     }));
     if (durationMs > 0) {
       setTimeout(() => {
@@ -1734,7 +1927,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedDayId: newCurrentProfile.days.length > 0 ? newCurrentProfile.days[0].id : null,
     });
     get().saveConfig();
-    get().addNotification(`Profile "${profileToDelete?.name}" deleted`, 'success');
+    if (profileToDelete) {
+      get().recordUndo({
+        kind: 'profile',
+        label: `profile "${profileToDelete.name}"`,
+        profile: profileToDelete,
+        index: config.profiles.indexOf(profileToDelete),
+      });
+    }
   },
 
   renameProfile: (profileId, name) => {

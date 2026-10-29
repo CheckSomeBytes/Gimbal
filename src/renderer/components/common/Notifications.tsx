@@ -31,6 +31,18 @@ function Notifications() {
             {notification.type === 'info' && 'ℹ'}
           </span>
           <span className="notification-message">{notification.message}</span>
+          {notification.action && (
+            <button
+              className="notification-action-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                notification.action!.onClick();
+                removeNotification(notification.id);
+              }}
+            >
+              {notification.action.label}
+            </button>
+          )}
           {notification.type === 'error' && (
             <button
               className="notification-copy-btn"

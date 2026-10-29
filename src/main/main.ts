@@ -4,6 +4,7 @@ import { join, dirname, basename, isAbsolute, resolve } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, renameSync, copyFileSync } from 'fs';
 import { createHash } from 'crypto';
 import QRCode from 'qrcode';
+import { WindowHelper } from './windowHelper';
 import {
   AppConfig,
   DEFAULT_CONFIG,
@@ -307,110 +308,14 @@ async function fetchPageTitle(url: string): Promise<string> {
   }
 }
 
-// Shared PowerShell type: enumerates every top-level window, not just each
-// process's "main" window. Get-Process only reports MainWindowTitle, so apps
-// that hold several windows (Slack, Chrome, PowerPoint) were invisible unless
-// Windows happened to designate the wanted one as main.
-const PS_WINDOW_HELPER = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Text;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-public class GimbalWin {
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr l);
-    public delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
-    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
-    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
-    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool f);
-    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-
-    public class Win { public IntPtr Handle; public string Title; public string ProcessName; }
-
-    public static List<Win> All() {
-        var res = new List<Win>();
-        EnumWindows((h, l) => {
-            // Minimized windows still count: they are restorable targets.
-            if (!IsWindowVisible(h) && !IsIconic(h)) return true;
-            var sb = new StringBuilder(512);
-            GetWindowText(h, sb, 512);
-            if (sb.Length == 0) return true;
-            string pname = "";
-            try {
-                uint pid; GetWindowThreadProcessId(h, out pid);
-                pname = Process.GetProcessById((int)pid).ProcessName;
-            } catch {}
-            res.Add(new Win { Handle = h, Title = sb.ToString(), ProcessName = pname });
-            return true;
-        }, IntPtr.Zero);
-        return res;
-    }
-
-    // SetForegroundWindow is refused unless the calling thread owns the
-    // foreground. Attaching to the current foreground thread lifts that.
-    public static bool Focus(IntPtr h) {
-        if (IsIconic(h)) ShowWindow(h, 9); // SW_RESTORE
-        IntPtr fg = GetForegroundWindow();
-        uint targetPid, fgPid;
-        uint targetThread = GetWindowThreadProcessId(h, out targetPid);
-        uint fgThread = GetWindowThreadProcessId(fg, out fgPid);
-        uint thisThread = GetCurrentThreadId();
-        if (fgThread != thisThread) AttachThreadInput(thisThread, fgThread, true);
-        BringWindowToTop(h);
-        bool ok = SetForegroundWindow(h);
-        if (fgThread != thisThread) AttachThreadInput(thisThread, fgThread, false);
-        for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) System.Threading.Thread.Sleep(25);
-        return GetForegroundWindow() == h;
-    }
-}
-'@
-`;
 
 // Get list of open windows (Windows only)
 async function getWindowList(): Promise<{ title: string; processName: string }[]> {
   if (process.platform !== 'win32') {
     return [];
   }
-
-  const { execFile } = require('child_process');
-
-  return new Promise((resolve) => {
-    const psScript = `${PS_WINDOW_HELPER}
-[GimbalWin]::All() | Select-Object ProcessName, Title | ConvertTo-Json -Compress
-`;
-
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
-      (error: Error | null, stdout: string) => {
-        if (error) {
-          resolve([]);
-          return;
-        }
-
-        try {
-          const result = JSON.parse(stdout);
-          // Handle single result (not an array)
-          const windows = Array.isArray(result) ? result : [result];
-          resolve(
-            windows.map((w: { ProcessName: string; Title: string }) => ({
-              title: w.Title,
-              processName: w.ProcessName,
-            }))
-          );
-        } catch {
-          resolve([]);
-        }
-      }
-    );
-  });
+  const result = await windowHelper.exclusive(() => windowHelper.send({ op: 'list' }));
+  return result.windows || [];
 }
 
 // Check if a link is accessible using Electron's net module (Chromium networking stack)
@@ -538,110 +443,95 @@ async function openInChrome(url: string): Promise<boolean> {
   return true;
 }
 
-// Focus window and paste - this requires native modules
-// For now, we'll implement a simplified version
+// How long to leave the pasted text on the clipboard before putting the
+// user's clipboard back. The target reads it when it handles Ctrl+V, which
+// SendWait has already delivered; this is margin for slow apps.
+const CLIPBOARD_RESTORE_DELAY_MS = 600;
+
+interface ClipboardSnapshot {
+  text: string;
+  html: string;
+  rtf: string;
+  image: Electron.NativeImage;
+}
+
+function snapshotClipboard(): ClipboardSnapshot {
+  return {
+    text: clipboard.readText(),
+    html: clipboard.readHTML(),
+    rtf: clipboard.readRTF(),
+    image: clipboard.readImage(),
+  };
+}
+
+// Put the user's clipboard back after a paste, unless they have copied
+// something else in the meantime. Formats Electron can't read (e.g. files
+// copied in Explorer) can't be restored; then the pasted text stays.
+function restoreClipboard(snapshot: ClipboardSnapshot, pastedText: string): void {
+  if (clipboard.readText() !== pastedText) return;
+  const data: Electron.Data = {};
+  if (snapshot.text) data.text = snapshot.text;
+  if (snapshot.html) data.html = snapshot.html;
+  if (snapshot.rtf) data.rtf = snapshot.rtf;
+  if (!snapshot.image.isEmpty()) data.image = snapshot.image;
+  if (Object.keys(data).length > 0) clipboard.write(data);
+}
+
+const windowHelper = new WindowHelper();
+
+// Focus the target window and paste text into it. Pastes run one at a time:
+// two quick clicks used to race, both pressing Ctrl+V after the second text was
+// on the clipboard. Resolves as soon as the paste is done; restoring the
+// clipboard happens afterwards, before the next paste starts.
 async function focusAndPaste(
   pattern: string,
   matchMode: 'exact' | 'contains' | 'regex',
   textToPaste: string,
   pressEnter: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
-  // Copy to clipboard first
-  clipboard.writeText(textToPaste);
-
-  // On Windows, we can use PowerShell to find and focus windows
-  if (process.platform === 'win32') {
-    const { execFile } = require('child_process');
-
-    // The pattern comes from the config, which can be shared or imported, so
-    // it never becomes part of the script text: it is passed in an environment
-    // variable and only ever compared as data. Splicing it into the script let
-    // a pattern like Zoom$(...) run arbitrary PowerShell.
-    // Case-insensitive throughout, matching the Settings "Test" button.
-    // "contains" is a literal substring match: -like treated [ ] ? * in
-    // window titles as wildcards, so the test and the live paste disagreed.
-    const matchConditions: Record<string, string> = {
-      exact: `$_.Title -eq $pattern`,
-      contains: `$_.Title.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0`,
-      regex: `$_.Title -match $pattern`,
-    };
-    const matchCondition = matchConditions[matchMode];
-    if (!matchCondition || typeof pattern !== 'string') {
-      return { success: false, error: 'Invalid window target settings' };
-    }
-
-    return new Promise((resolve) => {
-      // Enumerate every top-level window (not just per-process main windows),
-      // then focus the match and paste into it.
-      const psScript = `${PS_WINDOW_HELPER}
-$pattern = $env:GIMBAL_WINDOW_PATTERN
-$all = [GimbalWin]::All()
-Write-Host "DEBUG: Available windows:"
-$all | ForEach-Object { Write-Host "  - $($_.ProcessName): $($_.Title)" }
-Write-Host "DEBUG: Looking for pattern '$pattern' (${matchMode})"
-
-$matches = @($all | Where-Object { ${matchCondition} })
-if ($matches.Count -gt 1) {
-    Write-Host "DEBUG: $($matches.Count) windows matched; using the first."
-}
-$win = $matches | Select-Object -First 1
-if ($win) {
-    Write-Host "DEBUG: Found window - $($win.ProcessName): $($win.Title)"
-    $focused = [GimbalWin]::Focus($win.Handle)
-    if (-not $focused) {
-        Write-Host "DEBUG: Could not bring window to foreground"
-        Write-Output 'NOFOCUS'
-    } else {
-        Start-Sleep -Milliseconds 150
-        Add-Type -AssemblyName System.Windows.Forms
-        [System.Windows.Forms.SendKeys]::SendWait('^v')
-        ${pressEnter ? `Start-Sleep -Milliseconds 100
-        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')` : ''}
-        Write-Output 'SUCCESS'
-    }
-} else {
-    Write-Host "DEBUG: No matching window found"
-    Write-Output 'NOTFOUND'
-}
-`;
-
-      execFile(
-        'powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
-        { env: { ...process.env, GIMBAL_WINDOW_PATTERN: pattern } },
-        (error: Error | null, stdout: string, stderr: string) => {
-          if (error) {
-            console.error('PowerShell error:', error);
-            console.error('stderr:', stderr);
-            resolve({
-              success: false,
-              error: 'Failed to execute: ' + (error.message || 'Unknown error'),
-            });
-          } else if (stdout.includes('SUCCESS')) {
-            console.log('PowerShell debug output:', stdout);
-            resolve({ success: true });
-          } else if (stdout.includes('NOFOCUS')) {
-            console.log('PowerShell output:', stdout);
-            resolve({
-              success: false,
-              error:
-                'Found the window but Windows blocked focusing it. Click the target window once, then try again.',
-            });
-          } else {
-            console.log('PowerShell output:', stdout);
-            console.log('Pattern used:', pattern);
-            console.log('Match mode:', matchMode);
-            resolve({
-              success: false,
-              error: 'Window not found matching pattern: ' + pattern,
-            });
-          }
-        }
-      );
-    });
+  if (process.platform !== 'win32') {
+    // Can't paste here, but leave the text ready to paste by hand.
+    clipboard.writeText(textToPaste);
+    return { success: false, error: 'Platform not supported' };
+  }
+  if (typeof pattern !== 'string' || !['exact', 'contains', 'regex'].includes(matchMode)) {
+    return { success: false, error: 'Invalid window target settings' };
   }
 
-  return { success: false, error: 'Platform not supported' };
+  return new Promise((resolve) => {
+    windowHelper.exclusive(async () => {
+      const saved = snapshotClipboard();
+      clipboard.writeText(textToPaste);
+      const res = await windowHelper.send({ op: 'paste', pattern, mode: matchMode, enter: pressEnter });
+
+      switch (res.status) {
+        case 'SUCCESS':
+          resolve({ success: true });
+          await new Promise((r) => setTimeout(r, CLIPBOARD_RESTORE_DELAY_MS));
+          restoreClipboard(saved, textToPaste);
+          return;
+        // On failure the text stays on the clipboard so it can be pasted by hand.
+        case 'NOTFOUND':
+          resolve({ success: false, error: 'Window not found matching pattern: ' + pattern });
+          return;
+        case 'NOFOCUS':
+          resolve({
+            success: false,
+            error: 'Found the window but Windows blocked focusing it. Click the target window once, then try again.',
+          });
+          return;
+        case 'TIMEOUT':
+          resolve({
+            success: false,
+            error: 'The target window did not respond in time. Check it is not frozen, then try again.',
+          });
+          return;
+        default:
+          console.error('[Paste] Window helper error:', res.error);
+          resolve({ success: false, error: 'Paste failed: ' + (res.error || 'unknown error') });
+      }
+    });
+  });
 }
 
 function createWindow(): void {
@@ -2291,6 +2181,11 @@ app.whenReady().then(() => {
   setupIPC();
   createWindow();
 
+  // Start the paste helper now so the first paste of the session is fast too.
+  if (process.platform === 'win32') {
+    windowHelper.start().catch((error) => console.error('[WindowHelper] Could not start:', error));
+  }
+
   // Initialize backup system. Failures here (e.g. a backup folder on a drive
   // that isn't connected) must not stop the update check below.
   try {
@@ -2336,4 +2231,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopBackupTimer();
+  windowHelper.stop();
 });

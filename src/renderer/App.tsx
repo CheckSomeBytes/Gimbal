@@ -15,6 +15,19 @@ function App() {
     loadConfig();
   }, [loadConfig]);
 
+  // Ctrl+Z undoes the last delete. Text fields keep their own undo.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      e.preventDefault();
+      useAppStore.getState().undo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Apply theme CSS variables
   useEffect(() => {
     // Use break alert theme if active, otherwise use normal theme
