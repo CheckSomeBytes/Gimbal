@@ -1097,10 +1097,12 @@ function setupIPC(): void {
         console.log('[Update] Check result:', {
           current: app.getVersion(),
           latest: result?.updateInfo.version,
-          updateAvailable: result && result.updateInfo.version !== app.getVersion(),
+          updateAvailable: result?.isUpdateAvailable ?? false,
         });
+        // isUpdateAvailable, not a version comparison: a beta user who turns
+        // betas off would otherwise be offered the older stable release.
         return {
-          updateAvailable: result && result.updateInfo.version !== app.getVersion(),
+          updateAvailable: result?.isUpdateAvailable ?? false,
           currentVersion: app.getVersion(),
           latestVersion: result?.updateInfo.version,
         };
