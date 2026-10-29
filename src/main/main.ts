@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, clipboard, dialog, Menu, net } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, clipboard, ClipboardItem, dialog, Menu, net } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { join, dirname, basename, isAbsolute, resolve } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, renameSync, copyFileSync } from 'fs';
@@ -448,33 +448,41 @@ async function openInChrome(url: string): Promise<boolean> {
 // SendWait has already delivered; this is margin for slow apps.
 const CLIPBOARD_RESTORE_DELAY_MS = 600;
 
-interface ClipboardSnapshot {
-  text: string;
-  html: string;
-  rtf: string;
-  image: Electron.NativeImage;
-}
+// Each entry's data, read out in full: an entry from clipboard.read() fetches
+// its data lazily, which would return the pasted text once it has replaced it.
+type ClipboardSnapshot = Record<string, Blob | Electron.ClipboardBookmark>[];
 
-function snapshotClipboard(): ClipboardSnapshot {
-  return {
-    text: clipboard.readText(),
-    html: clipboard.readHTML(),
-    rtf: clipboard.readRTF(),
-    image: clipboard.readImage(),
-  };
+async function snapshotClipboard(): Promise<ClipboardSnapshot> {
+  const snapshot: ClipboardSnapshot = [];
+  try {
+    for (const item of await clipboard.read()) {
+      const data: Record<string, Blob | Electron.ClipboardBookmark> = {};
+      for (const type of item.types) {
+        try {
+          data[type] = await item.getType(type);
+        } catch {
+          // A format that can't be read can't be restored; skip it.
+        }
+      }
+      if (Object.keys(data).length > 0) snapshot.push(data);
+    }
+  } catch (error) {
+    console.error('[Paste] Could not read the clipboard:', error);
+  }
+  return snapshot;
 }
 
 // Put the user's clipboard back after a paste, unless they have copied
 // something else in the meantime. Formats Electron can't read (e.g. files
 // copied in Explorer) can't be restored; then the pasted text stays.
-function restoreClipboard(snapshot: ClipboardSnapshot, pastedText: string): void {
-  if (clipboard.readText() !== pastedText) return;
-  const data: Electron.Data = {};
-  if (snapshot.text) data.text = snapshot.text;
-  if (snapshot.html) data.html = snapshot.html;
-  if (snapshot.rtf) data.rtf = snapshot.rtf;
-  if (!snapshot.image.isEmpty()) data.image = snapshot.image;
-  if (Object.keys(data).length > 0) clipboard.write(data);
+async function restoreClipboard(snapshot: ClipboardSnapshot, pastedText: string): Promise<void> {
+  if (snapshot.length === 0) return;
+  try {
+    if ((await clipboard.readText()) !== pastedText) return;
+    await clipboard.write(snapshot.map((data) => new ClipboardItem(data)));
+  } catch (error) {
+    console.error('[Paste] Could not restore the clipboard:', error);
+  }
 }
 
 const windowHelper = new WindowHelper();
@@ -491,7 +499,7 @@ async function focusAndPaste(
 ): Promise<{ success: boolean; error?: string }> {
   if (process.platform !== 'win32') {
     // Can't paste here, but leave the text ready to paste by hand.
-    clipboard.writeText(textToPaste);
+    await clipboard.writeText(textToPaste);
     return { success: false, error: 'Platform not supported' };
   }
   if (typeof pattern !== 'string' || !['exact', 'contains', 'regex'].includes(matchMode)) {
@@ -500,15 +508,15 @@ async function focusAndPaste(
 
   return new Promise((resolve) => {
     windowHelper.exclusive(async () => {
-      const saved = snapshotClipboard();
-      clipboard.writeText(textToPaste);
+      const saved = await snapshotClipboard();
+      await clipboard.writeText(textToPaste);
       const res = await windowHelper.send({ op: 'paste', pattern, mode: matchMode, enter: pressEnter });
 
       switch (res.status) {
         case 'SUCCESS':
           resolve({ success: true });
           await new Promise((r) => setTimeout(r, CLIPBOARD_RESTORE_DELAY_MS));
-          restoreClipboard(saved, textToPaste);
+          await restoreClipboard(saved, textToPaste);
           return;
         // On failure the text stays on the clipboard so it can be pasted by hand.
         case 'NOTFOUND':
