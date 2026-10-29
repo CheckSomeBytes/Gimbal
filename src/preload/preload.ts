@@ -93,6 +93,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       endLabel?: string;
       evalLinks?: { url: string; dayNumber: number; dayName: string }[];
       currentEvalDay?: number | null;
+      labPoll?: {
+        labNumber: string;
+        text: string;
+        pattern: string;
+        matchMode: 'exact' | 'contains' | 'regex';
+      } | null;
     }
   ): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.OPEN_COUNTDOWN_TIMER, totalMinutes, message, theme);
@@ -237,6 +243,12 @@ declare global {
           endLabel?: string;
           evalLinks?: { url: string; dayNumber: number; dayName: string }[];
           currentEvalDay?: number | null;
+          labPoll?: {
+            labNumber: string;
+            text: string;
+            pattern: string;
+            matchMode: 'exact' | 'contains' | 'regex';
+          } | null;
         }
       ) => Promise<boolean>;
       onTimerTextScaleChanged: (callback: (scale: number) => void) => () => void;

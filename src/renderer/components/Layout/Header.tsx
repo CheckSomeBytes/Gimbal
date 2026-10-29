@@ -488,7 +488,7 @@ function Header() {
 
   // Colours and settings passed to the countdown window. Includes the break
   // alert theme so the timer turns red near the end, like the main window.
-  const getTimerTheme = (endLabel?: string) => {
+  const getTimerTheme = (endLabel?: string, labPoll?: ReturnType<typeof getTimerLabPoll>) => {
     const { theme, breakAlertTheme, timerFontFamily, timerTextScale } = currentProfile.settings;
     return {
       background: theme.colors.background,
@@ -515,6 +515,21 @@ function Header() {
       endLabel,
       evalLinks: getEvalLinks(),
       currentEvalDay: currentDay?.dayNumber ?? null,
+      labPoll,
+    };
+  };
+
+  // Lab progress poll for the countdown window's POLL button. Only offered
+  // when the timer is for a lab and there is somewhere to send it.
+  const getTimerLabPoll = () => {
+    const { windowTarget, labPollTemplate } = currentProfile.settings;
+    const labNum = estimateLabNumber.trim();
+    if (isClassStartSelected || !labNum || !labPollTemplate || !windowTarget.pattern) return null;
+    return {
+      labNumber: labNum,
+      text: labPollTemplate.replace(/<LAB_NUMBER>/g, labNum),
+      pattern: windowTarget.pattern,
+      matchMode: windowTarget.matchMode,
     };
   };
 
@@ -526,7 +541,7 @@ function Header() {
       return;
     }
 
-    await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme(isClassStartSelected ? 'Starts at' : undefined));
+    await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme(isClassStartSelected ? 'Starts at' : undefined, getTimerLabPoll()));
     addNotification('Countdown timer opened!', 'success');
   };
 
@@ -558,7 +573,7 @@ function Header() {
       setShowTimeEstimatePopup(false);
 
       // Open the countdown timer
-      await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme(isClassStartSelected ? 'Starts at' : undefined));
+      await window.electronAPI.openCountdownTimer(totalMinutes, timerMessage, getTimerTheme(isClassStartSelected ? 'Starts at' : undefined, getTimerLabPoll()));
 
       addNotification('Time estimate sent and timer opened!', 'success');
     } else {

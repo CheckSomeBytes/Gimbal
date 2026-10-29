@@ -198,6 +198,7 @@ export const IPC_CHANNELS = {
   OPEN_COUNTDOWN_TIMER: 'window:open-countdown',
   TIMER_SET_TEXT_SCALE: 'timer:set-text-scale',
   TIMER_TEXT_SCALE_CHANGED: 'timer:text-scale-changed',
+  TIMER_SEND_LAB_POLL: 'timer:send-lab-poll',
 
   // App
   GET_APP_PATH: 'app:get-path',

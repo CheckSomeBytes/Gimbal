@@ -15,6 +15,8 @@ import {
 
 let mainWindow: BrowserWindow | null = null;
 let countdownWindow: BrowserWindow | null = null;
+// Lab progress poll the open countdown window's POLL button posts, if any.
+let countdownLabPoll: TimerLabPoll | null = null;
 let backupTimerHandle: NodeJS.Timeout | null = null;
 let activeBackupTimerSignature: string | null = null;
 
@@ -909,6 +911,16 @@ function setupIPC(): void {
     }
   );
 
+  // POLL button in the countdown window: paste the lab progress poll into the
+  // target window, same as the main window's lab poll.
+  ipcMain.handle(IPC_CHANNELS.TIMER_SEND_LAB_POLL, async () => {
+    if (!countdownLabPoll) {
+      return { success: false, error: 'No lab poll for this timer' };
+    }
+    const { pattern, matchMode, text } = countdownLabPoll;
+    return focusAndPaste(pattern, matchMode, text);
+  });
+
   // The countdown window resizes its own text; forward the new scale to the
   // main window so it can persist it to the active profile.
   ipcMain.on(IPC_CHANNELS.TIMER_SET_TEXT_SCALE, (_, scale: number) => {
@@ -1086,6 +1098,15 @@ interface TimerTheme {
   evalLinks?: { url: string; dayNumber: number; dayName: string }[];
   /** Day# of the day selected in the main window, highlighted in the picker. */
   currentEvalDay?: number | null;
+  /** Lab progress poll for a lab timer; shows a POLL button in the window. */
+  labPoll?: TimerLabPoll | null;
+}
+
+interface TimerLabPoll {
+  labNumber: string;
+  text: string;
+  pattern: string;
+  matchMode: 'exact' | 'contains' | 'regex';
 }
 
 interface TimerAlertColors {
@@ -1147,6 +1168,12 @@ function openCountdownTimer(
       countdownWindow.close();
     }
 
+    countdownLabPoll = theme.labPoll || null;
+
+    // Opaque, not transparent: Windows composites transparent (layered)
+    // windows differently, and they stopped repainting while unfocused and
+    // dropped out of the alt-tab / topmost order. The page paints its own
+    // background edge to edge, so nothing is lost visually.
     countdownWindow = new BrowserWindow({
       width: 960,
       height: 540,
@@ -1155,8 +1182,7 @@ function openCountdownTimer(
       alwaysOnTop: true,
       frame: false,
       resizable: true,
-      transparent: true,
-      backgroundColor: '#00000000',
+      backgroundColor: /^#[0-9a-f]{6}$/i.test(theme.background) ? theme.background : '#000000',
       title: 'Countdown Timer',
       autoHideMenuBar: true,
       roundedCorners: false,
@@ -1164,7 +1190,23 @@ function openCountdownTimer(
         nodeIntegration: false,
         contextIsolation: true,
         preload: join(__dirname, '../preload/countdownPreload.js'),
+        // Keep ticking while unfocused or covered: the timer is often screen
+        // shared from the background, and Chromium otherwise throttles it.
+        backgroundThrottling: false,
+        // The end-of-timer tones play without a click in the window.
+        autoplayPolicy: 'no-user-gesture-required',
       },
+    });
+    // 'screen-saver' sits above other topmost windows (Zoom's share toolbar,
+    // etc.). Windows can still demote a topmost window when another app
+    // activates, so re-assert it whenever the timer loses focus.
+    const win = countdownWindow;
+    win.setAlwaysOnTop(true, 'screen-saver');
+    win.on('blur', () => {
+      if (!win.isDestroyed()) {
+        win.setAlwaysOnTop(true, 'screen-saver');
+        win.moveTop();
+      }
     });
 
     // Create HTML content for the countdown timer
@@ -1191,6 +1233,7 @@ function openCountdownTimer(
       value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const escapedMessage = escapeHtml(message);
     const currentEvalDay = theme.currentEvalDay ?? null;
+    const labPoll = theme.labPoll || null;
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -1247,7 +1290,7 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
     /* Keep the hover controls above the timer text: the text is later in the
        DOM and on its own compositing layer, so it would otherwise paint over
        them and swallow the clicks once it grows large enough to overlap. */
-    .close-btn, .qr-btn, .qr-menu, .time-controls, .size-controls {
+    .close-btn, .qr-btn, .qr-menu, .time-controls, .size-controls, .poll-btn {
       z-index: 10;
     }
     .timer-content {
@@ -1374,6 +1417,32 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
       margin-top: min(1vh, 6px);
       white-space: nowrap;
     }
+    .poll-btn {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg);
+      border: 2px solid var(--text-muted);
+      color: var(--text-muted);
+      font-family: ${theme.fontFamily};
+      font-size: 10px;
+      cursor: pointer;
+      padding: 4px 8px;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    body:hover .poll-btn, .poll-btn.sent, .poll-btn.failed {
+      opacity: 1;
+    }
+    .poll-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .poll-btn:disabled { cursor: default; }
+    .poll-btn.sent { border-color: var(--success); color: var(--success); }
+    .poll-btn.failed { border-color: var(--danger); color: var(--danger); }
     .close-btn {
       position: absolute;
       top: 10px;
@@ -1549,11 +1618,26 @@ ${alert ? `    /* Mirrors the main window's break alert theme near the end. */
        the same on every theme. */
     .timer.done { color: #4da6ff; animation: done-blink 2s ease-in-out infinite alternate; }
     @keyframes done-blink { from { color: #4da6ff; } to { color: #ff4d4d; } }
+    /* Time's up: the whole window flashes between blue and red, with white
+       text so it stays readable on both. Fixed colors so every theme (and the
+       break alert theme) looks the same at 00:00. */
+    body.done {
+      --text: #ffffff;
+      --text-muted: #ffffff;
+      --border: #ffffff;
+      animation: done-flash 1s steps(1, end) infinite;
+    }
+    body.done .timer.done, body.done .message, body.done .return-time { color: #ffffff; animation: none; }
+    @keyframes done-flash {
+      0% { background-color: #1f5fbf; }
+      50% { background-color: #c62828; }
+    }
   </style>
 </head>
 <body>
   <button class="close-btn" onclick="window.close()" title="Close">X</button>
-${evalQrs.length ? `  <button class="qr-btn" onclick="toggleQrMenu(event)" title="Show a day's eval QR code">QR</button>
+${labPoll ? `  <button class="poll-btn" id="pollBtn" onclick="sendLabPoll()" title="Post the lab ${escapeHtml(labPoll.labNumber)} progress poll">LAB ${escapeHtml(labPoll.labNumber)} POLL</button>
+` : ''}${evalQrs.length ? `  <button class="qr-btn" onclick="toggleQrMenu(event)" title="Show a day's eval QR code">QR</button>
   <div class="qr-menu" id="qrMenu">
     <div class="qr-menu-title">SHOW EVAL FOR</div>
 ${evalQrs.map((q) => `    <button class="qr-menu-item" data-day="${q.dayNumber}" onclick="showQr(${q.dayNumber})">Day ${q.dayNumber} - ${escapeHtml(q.dayName)}${q.dayNumber === currentEvalDay ? ' <span class="qr-menu-note">(today)</span>' : ''}</button>
@@ -1631,6 +1715,72 @@ ${evalQrs.map((q) => `    <div class="qr-day" data-day="${q.dayNumber}">
         document.body.classList.remove('qr-menu-open');
       }
     });
+    var POLL_LABEL = document.getElementById('pollBtn') ? document.getElementById('pollBtn').textContent : '';
+    var pollResetHandle = null;
+    function sendLabPoll() {
+      var btn = document.getElementById('pollBtn');
+      if (!btn || !window.countdownAPI || btn.disabled) return;
+      btn.disabled = true;
+      btn.classList.remove('sent', 'failed');
+      btn.textContent = 'SENDING...';
+      window.countdownAPI.sendLabPoll().then(function(result) {
+        var ok = result && result.success;
+        btn.textContent = ok ? 'POLL SENT!' : 'POLL FAILED';
+        btn.title = ok ? btn.title : ((result && result.error) || 'Failed to send lab poll');
+        btn.classList.add(ok ? 'sent' : 'failed');
+      }, function() {
+        btn.textContent = 'POLL FAILED';
+        btn.classList.add('failed');
+      }).then(function() {
+        btn.disabled = false;
+        clearTimeout(pollResetHandle);
+        pollResetHandle = setTimeout(function() {
+          btn.textContent = POLL_LABEL;
+          btn.classList.remove('sent', 'failed');
+        }, 3000);
+      });
+    }
+    // Retro square-wave beeps: a quiet one at the one-minute mark and a louder
+    // three-note chime at 00:00.
+    var audioCtx = null;
+    function playNotes(notes, volume) {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        var t = audioCtx.currentTime + 0.05;
+        notes.forEach(function(note) {
+          var osc = audioCtx.createOscillator();
+          var gain = audioCtx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = note.freq;
+          // Short ramps avoid clicks at the start and end of each note.
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(volume, t + 0.01);
+          gain.gain.setValueAtTime(volume, t + note.dur - 0.03);
+          gain.gain.linearRampToValueAtTime(0, t + note.dur);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(t);
+          osc.stop(t + note.dur);
+          t += note.dur + 0.06;
+        });
+      } catch (e) {
+        // No audio device: the visual cues still work.
+      }
+    }
+    function playOneMinuteTone() {
+      playNotes([{ freq: 880, dur: 0.15 }], 0.04);
+    }
+    function playEndTone() {
+      playNotes([
+        { freq: 659, dur: 0.18 }, { freq: 880, dur: 0.18 }, { freq: 1319, dur: 0.4 },
+        { freq: 659, dur: 0.18 }, { freq: 880, dur: 0.18 }, { freq: 1319, dur: 0.4 }
+      ], 0.15);
+    }
+    // Remaining seconds at the last update, so each tone fires once when its
+    // mark is crossed. Starting from the full duration means a timer opened
+    // with a minute or less left doesn't sound the one-minute tone.
+    var lastRemaining = ${totalSeconds};
     var isEditing = false;
     var MIN_SCALE = 0.5;
     var MAX_SCALE = 2;
@@ -1715,6 +1865,14 @@ ${evalQrs.map((q) => `    <div class="qr-day" data-day="${q.dayNumber}">
       // window, back to normal once time is up.
       document.body.classList.toggle('alert', HAS_ALERT_THEME && remaining > 0 && remaining <= ALERT_SECONDS);
 
+      if (lastRemaining > 60 && remaining <= 60 && remaining > 0) {
+        playOneMinuteTone();
+      } else if (lastRemaining > 0 && remaining <= 0) {
+        playEndTone();
+      }
+      lastRemaining = remaining;
+
+      document.body.classList.toggle('done', remaining <= 0);
       timerEl.className = 'timer';
       if (remaining <= 0) {
         timerEl.classList.add('done');
@@ -1766,8 +1924,13 @@ ${evalQrs.map((q) => `    <div class="qr-day" data-day="${q.dayNumber}">
     writeFileSync(tempPath, htmlContent);
     countdownWindow.loadFile(tempPath);
 
-    countdownWindow.on('closed', () => {
-      countdownWindow = null;
+    // Closing a previous timer fires its 'closed' after the replacement is
+    // open, so only clear state that still belongs to this window.
+    win.on('closed', () => {
+      if (countdownWindow === win) {
+        countdownWindow = null;
+        countdownLabPoll = null;
+      }
     });
 
     return true;
