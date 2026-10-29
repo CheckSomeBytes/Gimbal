@@ -15,6 +15,25 @@ export interface AppConfig {
   days?: Day[];
 }
 
+// Result of reading config.json when the renderer starts.
+export interface ConfigLoadResult {
+  config: AppConfig;
+  /**
+   * ok: read normally. new: no config file yet.
+   * recovered: config.json was damaged, so the previous good copy was loaded.
+   * failed: nothing readable; the main process refuses saves until a backup is
+   * restored or a config imported, so the defaults shown never overwrite it.
+   */
+  status: 'ok' | 'new' | 'recovered' | 'failed';
+  message?: string;
+}
+
+export interface ConfigReplaceResult {
+  success: boolean;
+  canceled?: boolean;
+  error?: string;
+}
+
 export interface ScheduledTime {
   id: string;
   label: string;
@@ -31,7 +50,9 @@ export interface BackupSettings {
   intervalMinutes: number;
   maxBackups: number;
   backupDirectory: string;
+  /** No longer written: the backup list is the source of truth. Kept so older configs still type-check. */
   lastBackupTime?: string;
+  /** No longer written; see lastBackupTime. */
   lastBackupHash?: string;
 }
 
@@ -182,6 +203,7 @@ export const IPC_CHANNELS = {
   // Storage
   LOAD_CONFIG: 'config:load',
   SAVE_CONFIG: 'config:save',
+  SAVE_CONFIG_SYNC: 'config:save-sync',
   EXPORT_CONFIG: 'config:export',
   IMPORT_CONFIG: 'config:import',
 

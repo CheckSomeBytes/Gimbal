@@ -20,6 +20,20 @@ import {
   AdditionalUrl,
 } from '../../shared/types';
 
+// Saves are debounced: many actions (typing lab notes, settings fields) save on
+// every keystroke, and each save rewrites the whole config file. A pending save
+// is flushed synchronously when the window unloads, so nothing is lost on quit.
+const SAVE_DEBOUNCE_MS = 500;
+let pendingSaveTimer: ReturnType<typeof setTimeout> | null = null;
+// Set when the config could not be loaded: what's on screen is defaults, and
+// saving it would overwrite the user's data.
+let configLoadFailed = false;
+// Set while an import or restore replaces the config on disk, so a pending
+// save of the old in-memory config can't land on top of it.
+let savesSuspended = false;
+// Only report a run of failed saves once, not on every keystroke.
+let saveFailureReported = false;
+
 interface Notification {
   id: string;
   message: string;
@@ -56,6 +70,11 @@ interface AppState {
   // Actions
   loadConfig: () => Promise<void>;
   saveConfig: () => Promise<void>;
+  /** Write a pending save now, synchronously. */
+  flushPendingSave: () => void;
+  /** Flush, then stop saving until resumeSaves (import/restore in progress). */
+  suspendSaves: () => void;
+  resumeSaves: () => void;
 
   // Day operations
   addDay: (name: string) => void;
@@ -127,7 +146,8 @@ interface AppState {
   toggleSidebar: () => void;
   toggleSettings: () => void;
   openSettingsToTab: (tab: string) => void;
-  addNotification: (message: string, type: 'info' | 'success' | 'error') => void;
+  /** durationMs 0 keeps the notification until it is clicked. */
+  addNotification: (message: string, type: 'info' | 'success' | 'error', durationMs?: number) => void;
   removeNotification: (id: string) => void;
   closeValidationModal: () => void;
   updateLastLaunchDate: () => void;
@@ -181,7 +201,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get()._configLoadStarted) return; // Prevent duplicate calls (e.g., React StrictMode)
     set({ _configLoadStarted: true, isLoading: true });
     try {
-      const loadedConfig = await window.electronAPI.loadConfig();
+      const loadResult = await window.electronAPI.loadConfig();
+      const loadedConfig = loadResult.config;
+      if (loadResult.status === 'failed') {
+        configLoadFailed = true;
+        get().addNotification(loadResult.message || 'Your saved data could not be read.', 'error', 0);
+      } else if (loadResult.status === 'recovered') {
+        get().addNotification(loadResult.message || 'Your saved data was damaged and has been recovered.', 'info', 0);
+      }
 
       // Migrate from old format (settings/days at root) to new profile format
       let config: AppConfig;
@@ -306,17 +333,57 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error('Failed to load config:', error);
+      // The defaults on screen are not the user's data; don't save them.
+      configLoadFailed = true;
       set({ isLoading: false });
+      get().addNotification('Your saved data could not be loaded. Changes will not be saved until you restart.', 'error', 0);
     }
   },
 
   saveConfig: async () => {
+    if (configLoadFailed || savesSuspended) return;
+    if (pendingSaveTimer) clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = setTimeout(async () => {
+      pendingSaveTimer = null;
+      if (configLoadFailed || savesSuspended) return;
+      let saved = false;
+      try {
+        saved = await window.electronAPI.saveConfig(get().config);
+      } catch (error) {
+        console.error('Failed to save config:', error);
+      }
+      if (saved) {
+        saveFailureReported = false;
+      } else if (!saveFailureReported) {
+        saveFailureReported = true;
+        get().addNotification(
+          'Changes could not be saved. Check the app has access to its data folder (OneDrive or antivirus may be locking it).',
+          'error',
+          0
+        );
+      }
+    }, SAVE_DEBOUNCE_MS);
+  },
+
+  flushPendingSave: () => {
+    if (!pendingSaveTimer) return;
+    clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = null;
+    if (configLoadFailed || savesSuspended) return;
     try {
-      await window.electronAPI.saveConfig(get().config);
+      window.electronAPI.saveConfigSync(get().config);
     } catch (error) {
-      console.error('Failed to save config:', error);
-      get().addNotification('Failed to save configuration', 'error');
+      console.error('Failed to save config on exit:', error);
     }
+  },
+
+  suspendSaves: () => {
+    get().flushPendingSave();
+    savesSuspended = true;
+  },
+
+  resumeSaves: () => {
+    savesSuspended = false;
   },
 
   addDay: (name) => {
@@ -1578,14 +1645,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ isSettingsOpen: !state.isSettingsOpen }));
   },
 
-  addNotification: (message, type) => {
+  addNotification: (message, type, durationMs = 3000) => {
     const id = uuidv4();
     set((state) => ({
       notifications: [...state.notifications, { id, message, type }],
     }));
-    setTimeout(() => {
-      get().removeNotification(id);
-    }, 3000);
+    if (durationMs > 0) {
+      setTimeout(() => {
+        get().removeNotification(id);
+      }, durationMs);
+    }
   },
 
   removeNotification: (id) => {
@@ -1735,3 +1804,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ openLabNotesLabNumber: labNumber });
   },
 }));
+
+// Write any pending save before the window goes away (quit, close, reload).
+window.addEventListener('beforeunload', () => {
+  useAppStore.getState().flushPendingSave();
+});

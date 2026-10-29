@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, clipboard, dialog, Menu, net } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import { join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
+import { join, dirname, basename, isAbsolute, resolve } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, renameSync, copyFileSync } from 'fs';
 import { createHash } from 'crypto';
 import QRCode from 'qrcode';
 import {
@@ -11,6 +11,8 @@ import {
   LinkCheckResult,
   BackupMetadata,
   BackupResult,
+  ConfigLoadResult,
+  ConfigReplaceResult,
 } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -82,35 +84,178 @@ function migrateConfigIfNeeded(): void {
   console.log('[Migrate] No previous config found; starting fresh');
 }
 
-// Load configuration from disk
-function loadConfig(): AppConfig {
-  const configPath = getDataPath();
-  try {
-    if (existsSync(configPath)) {
-      const data = readFileSync(configPath, 'utf-8');
-      return JSON.parse(data) as AppConfig;
-    }
-  } catch (error) {
-    console.error('Error loading config:', error);
-  }
-  return DEFAULT_CONFIG;
+// Set when config.json exists but could not be read. Saves are refused until a
+// backup is restored or a config imported: otherwise the defaults shown in its
+// place would be saved over the damaged file, and then backed up over the good
+// backups.
+let configLoadFailed = false;
+
+// Whether config.json currently holds a config we could read or wrote
+// ourselves. Only then is it worth keeping as config.json.bak.
+let configFileReadable = false;
+
+// The first load happens before the window opens; the renderer's first
+// config:load receives that result so it can tell the user about a recovery.
+let initialConfigLoad: ConfigLoadResult | null = null;
+
+function getConfigBackupPath(): string {
+  return getDataPath() + '.bak';
 }
 
-// Save configuration to disk
-function saveConfig(config: AppConfig): boolean {
-  const configPath = getDataPath();
+// A config the app can save: the profile format, with at least one profile.
+function isSavableConfig(value: unknown): value is AppConfig {
+  const config = value as AppConfig;
+  return (
+    !!config &&
+    typeof config === 'object' &&
+    Array.isArray(config.profiles) &&
+    config.profiles.length > 0 &&
+    config.profiles.every(
+      (p) => !!p && typeof p === 'object' && typeof p.id === 'string' &&
+        Array.isArray(p.days) && !!p.settings && typeof p.settings === 'object'
+    )
+  );
+}
+
+// A config the app can load. Also accepts the pre-profile format (settings and
+// days at the root), which the renderer migrates.
+function isLoadableConfig(value: unknown): value is AppConfig {
+  if (!value || typeof value !== 'object') return false;
+  if (!('profiles' in value)) return Array.isArray((value as AppConfig).days);
+  return isSavableConfig(value);
+}
+
+// Read and check a config file; null if it is missing, unparseable or not a config.
+function readConfigFile(path: string): AppConfig | null {
   try {
-    const dir = join(configPath, '..');
-    if (!existsSync(dir)) {
-      const { mkdirSync } = require('fs');
-      mkdirSync(dir, { recursive: true });
+    if (!existsSync(path)) return null;
+    const parsed = JSON.parse(readFileSync(path, 'utf-8'));
+    return isLoadableConfig(parsed) ? parsed : null;
+  } catch (error) {
+    console.error(`Error reading config ${path}:`, error);
+    return null;
+  }
+}
+
+// The config on disk, or null if there is none or it is unreadable. Used by
+// the backup code, which must never back up defaults in place of real data.
+function readCurrentConfig(): AppConfig | null {
+  const config = readConfigFile(getDataPath());
+  return config && Array.isArray(config.profiles) ? config : null;
+}
+
+// Load the config for the renderer, recovering from a damaged file if possible.
+function loadConfig(): ConfigLoadResult {
+  const configPath = getDataPath();
+  if (!existsSync(configPath)) {
+    configLoadFailed = false;
+    configFileReadable = false;
+    return { config: DEFAULT_CONFIG, status: 'new' };
+  }
+
+  const config = readConfigFile(configPath);
+  if (config) {
+    configLoadFailed = false;
+    configFileReadable = true;
+    return { config, status: 'ok' };
+  }
+
+  // Damaged. Keep a copy before anything can replace it.
+  configFileReadable = false;
+  const stamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+  const corruptPath = configPath.replace(/\.json$/, '') + `.corrupt-${stamp}.json`;
+  try {
+    copyFileSync(configPath, corruptPath);
+  } catch (error) {
+    console.error('Error keeping a copy of the damaged config:', error);
+  }
+
+  const previous = readConfigFile(getConfigBackupPath());
+  if (previous && writeConfigFile(previous)) {
+    configLoadFailed = false;
+    console.warn(`[Config] ${configPath} was unreadable; loaded ${getConfigBackupPath()}`);
+    return {
+      config: previous,
+      status: 'recovered',
+      message: `Your saved data was damaged, so the previous good copy was loaded. Your most recent change may be missing. The damaged file was kept as ${basename(corruptPath)}.`,
+    };
+  }
+
+  configLoadFailed = true;
+  console.error(`[Config] ${configPath} is unreadable and there is no usable ${getConfigBackupPath()}`);
+  return {
+    config: DEFAULT_CONFIG,
+    status: 'failed',
+    message: `Your saved data could not be read. Nothing will be saved until you restore a backup (Settings > System) or import a config. The damaged file was kept as ${basename(corruptPath)}.`,
+  };
+}
+
+// Write config.json without ever leaving it half-written: write a temp file,
+// then rename it over the original. A crash mid-write leaves the old file intact.
+function writeConfigFile(config: AppConfig): boolean {
+  const configPath = getDataPath();
+  const tempPath = configPath + '.tmp';
+  try {
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(tempPath, JSON.stringify(config, null, 2));
+
+    // Keep the version being replaced as the fallback for a damaged config.json.
+    if (configFileReadable && existsSync(configPath)) {
+      copyFileSync(configPath, getConfigBackupPath());
     }
-    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    try {
+      renameSync(tempPath, configPath);
+    } catch (error) {
+      // Antivirus or OneDrive can briefly lock the target, which makes the
+      // rename fail on Windows. Copying still succeeds in that case.
+      console.warn('Atomic config rename failed, copying instead:', error);
+      copyFileSync(tempPath, configPath);
+      unlinkSync(tempPath);
+    }
+    configFileReadable = true;
     return true;
   } catch (error) {
     console.error('Error saving config:', error);
     return false;
   }
+}
+
+// Save a config sent by the renderer.
+function saveConfig(config: AppConfig): boolean {
+  if (configLoadFailed) {
+    console.warn('[Config] Refusing to save: the config on disk could not be loaded');
+    return false;
+  }
+  if (!isSavableConfig(config)) {
+    console.error('[Config] Refusing to save an invalid config');
+    return false;
+  }
+  return writeConfigFile(config);
+}
+
+// Replace the whole config (import or restore). Backs up the current config
+// first, so the replacement can itself be undone from the backup list.
+function replaceConfig(config: AppConfig): ConfigReplaceResult {
+  if (!isSavableConfig(config)) {
+    return { success: false, error: 'Not a Gimbal configuration file' };
+  }
+
+  const current = readCurrentConfig();
+  if (current) {
+    const directory = resolveBackupDirectory(current);
+    const backup = createBackup(current, directory);
+    if (!backup.success) {
+      return { success: false, error: `Could not back up the current configuration first: ${backup.error}` };
+    }
+    enforceBackupRetention(directory, getBackupSettings(current)?.maxBackups);
+  }
+
+  if (!writeConfigFile(config)) {
+    return { success: false, error: 'Could not write the configuration file' };
+  }
+  configLoadFailed = false;
+  return { success: true };
 }
 
 // Fetch page title from URL using fetch + regex (faster and more reliable)
@@ -520,10 +665,64 @@ function getDefaultBackupDirectory(): string {
   return current;
 }
 
-// Calculate SHA256 hash of config for change detection
+function getBackupSettings(config: AppConfig | null) {
+  const profile = config?.profiles?.find((p) => p.id === config.currentProfileId);
+  return profile?.settings?.backupSettings;
+}
+
+// The backup folder setting travels with the config (export/import, a dev
+// config shared between Windows and WSL), so it can hold a path that means
+// nothing on this machine. Under Linux "C:\Users\..." is a relative name, and
+// mkdir created a folder with that literal name in the working directory.
+// Only an absolute path is used; anything else falls back to the default.
+function resolveBackupDirectory(config: AppConfig | null): string {
+  const setting = getBackupSettings(config)?.backupDirectory;
+  if (setting && isAbsolute(setting)) return setting;
+  if (setting) {
+    console.warn(`[Backup] Ignoring backup directory that is not an absolute path here: ${setting}`);
+  }
+  return getDefaultBackupDirectory();
+}
+
+// SHA256 of the config for change detection. Leaves out fields that change
+// without the user editing anything, otherwise every check looks like a change.
 function calculateConfigHash(config: AppConfig): string {
-  const configStr = JSON.stringify(config);
-  return createHash('sha256').update(configStr).digest('hex');
+  const comparable = {
+    ...config,
+    profiles: config.profiles.map((p) => ({
+      ...p,
+      settings: {
+        ...p.settings,
+        lastLaunchDate: undefined,
+        backupSettings: p.settings.backupSettings && {
+          ...p.settings.backupSettings,
+          lastBackupTime: undefined,
+          lastBackupHash: undefined,
+        },
+      },
+    })),
+  };
+  return createHash('sha256').update(JSON.stringify(comparable)).digest('hex');
+}
+
+// Hash of the newest backup in the folder, or null if there is none. Compared
+// with the live config so an unchanged config is not backed up again; storing
+// the hash in the config instead never matched, because writing it changed the
+// config.
+function getNewestBackupHash(directory: string): string | null {
+  const newest = listBackups(directory)[0];
+  if (!newest) return null;
+  const config = readConfigFile(newest.filepath);
+  return config && Array.isArray(config.profiles) ? calculateConfigHash(config) : null;
+}
+
+// A path is only restored or deleted if it is a backup file in the backup folder.
+function isBackupFilePath(filepath: string, directory: string): boolean {
+  return (
+    typeof filepath === 'string' &&
+    resolve(dirname(filepath)) === resolve(directory) &&
+    /^backup-.*\.json$/.test(basename(filepath))
+  );
 }
 
 // Create a backup of the current configuration
@@ -570,9 +769,9 @@ function createBackup(config: AppConfig, directory: string): BackupResult {
 }
 
 // Enforce backup retention policy (keep only N most recent backups)
-function enforceBackupRetention(directory: string, maxBackups: number): void {
+function enforceBackupRetention(directory: string, maxBackups: number | undefined): void {
   try {
-    if (!existsSync(directory)) {
+    if (!maxBackups || maxBackups < 1 || !existsSync(directory)) {
       return;
     }
 
@@ -694,10 +893,9 @@ function deleteBackup(filepath: string): { success: boolean; error?: string } {
 // Describes the settings the backup timer depends on, so we can tell whether a
 // config save actually requires restarting it.
 function getBackupTimerSignature(config: AppConfig): string {
-  const profile = config.profiles.find((p) => p.id === config.currentProfileId);
-  const s = profile?.settings.backupSettings;
+  const s = getBackupSettings(config);
   if (!s?.enabled) return 'disabled';
-  return `enabled:${s.intervalMinutes}:${s.backupDirectory || getDefaultBackupDirectory()}`;
+  return `enabled:${s.intervalMinutes}:${resolveBackupDirectory(config)}`;
 }
 
 // Start the automatic backup timer
@@ -708,39 +906,40 @@ function startBackupTimer(config: AppConfig): void {
   activeBackupTimerSignature = getBackupTimerSignature(config);
 
   // Find backup settings from current profile
-  const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-  if (!currentProfile?.settings.backupSettings?.enabled) {
+  const settings = getBackupSettings(config);
+  if (!settings?.enabled) {
     console.log('[Backup] Auto-backup is disabled');
     return;
   }
 
-  const settings = currentProfile.settings.backupSettings;
   const intervalMs = settings.intervalMinutes * 60 * 1000;
 
   console.log(`[Backup] Starting auto-backup timer (interval: ${settings.intervalMinutes} minutes)`);
 
   backupTimerHandle = setInterval(() => {
-    // Reload config to get latest state
-    const latestConfig = loadConfig();
-    const latestProfile = latestConfig.profiles.find((p) => p.id === latestConfig.currentProfileId);
+    // Reload config to get latest state. Never back up when it can't be read:
+    // that would rotate good backups out in favour of defaults.
+    const latestConfig = readCurrentConfig();
+    if (!latestConfig || configLoadFailed) {
+      console.warn('[Backup] Config unreadable, skipping auto-backup');
+      return;
+    }
+    const latestSettings = getBackupSettings(latestConfig);
 
-    if (!latestProfile?.settings.backupSettings?.enabled) {
+    if (!latestSettings?.enabled) {
       console.log('[Backup] Auto-backup disabled, stopping timer');
       stopBackupTimer();
       return;
     }
 
-    const latestSettings = latestProfile.settings.backupSettings;
-    const currentHash = calculateConfigHash(latestConfig);
+    const directory = resolveBackupDirectory(latestConfig);
 
-    // Check if config has changed since last backup
-    if (latestSettings.lastBackupHash && currentHash === latestSettings.lastBackupHash) {
+    // Check if config has changed since the newest backup
+    if (getNewestBackupHash(directory) === calculateConfigHash(latestConfig)) {
       console.log('[Backup] No changes detected, skipping backup');
       return;
     }
 
-    // Create backup
-    const directory = latestSettings.backupDirectory || getDefaultBackupDirectory();
     const result = createBackup(latestConfig, directory);
 
     if (result.success) {
@@ -748,11 +947,6 @@ function startBackupTimer(config: AppConfig): void {
 
       // Enforce retention policy
       enforceBackupRetention(directory, latestSettings.maxBackups);
-
-      // Update settings with last backup info
-      latestProfile.settings.backupSettings.lastBackupTime = new Date().toISOString();
-      latestProfile.settings.backupSettings.lastBackupHash = currentHash;
-      saveConfig(latestConfig);
 
       // Notify renderer
       if (mainWindow) {
@@ -779,11 +973,13 @@ function stopBackupTimer(): void {
 // Set up IPC handlers
 function setupIPC(): void {
   // Config operations
-  ipcMain.handle(IPC_CHANNELS.LOAD_CONFIG, () => {
-    return loadConfig();
+  ipcMain.handle(IPC_CHANNELS.LOAD_CONFIG, (): ConfigLoadResult => {
+    const result = initialConfigLoad ?? loadConfig();
+    initialConfigLoad = null;
+    return result;
   });
 
-  ipcMain.handle(IPC_CHANNELS.SAVE_CONFIG, (_, config: AppConfig) => {
+  const handleSaveConfig = (config: AppConfig): boolean => {
     const result = saveConfig(config);
 
     // The backup timer is configured from settings that live in the renderer's
@@ -799,6 +995,14 @@ function setupIPC(): void {
     }
 
     return result;
+  };
+
+  ipcMain.handle(IPC_CHANNELS.SAVE_CONFIG, (_, config: AppConfig) => handleSaveConfig(config));
+
+  // Synchronous save, used only to flush a pending (debounced) save while the
+  // window is unloading, when an async round trip would never complete.
+  ipcMain.on(IPC_CHANNELS.SAVE_CONFIG_SYNC, (event, config: AppConfig) => {
+    event.returnValue = handleSaveConfig(config);
   });
 
   ipcMain.handle(IPC_CHANNELS.EXPORT_CONFIG, async () => {
@@ -809,31 +1013,31 @@ function setupIPC(): void {
     });
 
     if (!result.canceled && result.filePath) {
-      const config = loadConfig();
+      const config = readCurrentConfig();
+      if (!config) return false;
       writeFileSync(result.filePath, JSON.stringify(config, null, 2));
       return true;
     }
     return false;
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_CONFIG, async () => {
+  ipcMain.handle(IPC_CHANNELS.IMPORT_CONFIG, async (): Promise<ConfigReplaceResult> => {
     const result = await dialog.showOpenDialog({
       title: 'Import Configuration',
       filters: [{ name: 'JSON', extensions: ['json'] }],
       properties: ['openFile'],
     });
 
-    if (!result.canceled && result.filePaths[0]) {
-      try {
-        const data = readFileSync(result.filePaths[0], 'utf-8');
-        const config = JSON.parse(data) as AppConfig;
-        saveConfig(config);
-        return config;
-      } catch {
-        return null;
-      }
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, canceled: true };
     }
-    return null;
+    let config: unknown;
+    try {
+      config = JSON.parse(readFileSync(result.filePaths[0], 'utf-8'));
+    } catch (error) {
+      return { success: false, error: `Could not read the file: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    return replaceConfig(config as AppConfig);
   });
 
   // Link operations
@@ -944,8 +1148,8 @@ function setupIPC(): void {
     try {
       if (app.isPackaged) {
         // Read setting for beta updates
-        const config = loadConfig();
-        const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
+        const config = readCurrentConfig();
+        const currentProfile = config?.profiles.find((p) => p.id === config.currentProfileId);
         const includeBeta = currentProfile?.settings.includeBetaUpdates ?? false;
         autoUpdater.allowPrerelease = includeBeta;
         autoUpdater.channel = includeBeta ? 'beta' : 'latest';
@@ -980,8 +1184,8 @@ function setupIPC(): void {
     try {
       if (app.isPackaged) {
         // Ensure allowPrerelease and channel match user setting before download
-        const config = loadConfig();
-        const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
+        const config = readCurrentConfig();
+        const currentProfile = config?.profiles.find((p) => p.id === config.currentProfileId);
         const includeBeta = currentProfile?.settings.includeBetaUpdates ?? false;
         autoUpdater.allowPrerelease = includeBeta;
         autoUpdater.channel = includeBeta ? 'beta' : 'latest';
@@ -1017,46 +1221,47 @@ function setupIPC(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE_MANUAL, async (): Promise<BackupResult> => {
-    const config = loadConfig();
-    const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-    const directory =
-      currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
+    const config = readCurrentConfig();
+    if (!config || configLoadFailed) {
+      return { success: false, error: 'The current configuration could not be read' };
+    }
+    const directory = resolveBackupDirectory(config);
 
     const result = createBackup(config, directory);
 
-    if (result.success && currentProfile?.settings.backupSettings) {
-      // Enforce retention policy
-      enforceBackupRetention(directory, currentProfile.settings.backupSettings.maxBackups);
-
-      // Update last backup info
-      const hash = calculateConfigHash(config);
-      currentProfile.settings.backupSettings.lastBackupTime = new Date().toISOString();
-      currentProfile.settings.backupSettings.lastBackupHash = hash;
-      saveConfig(config);
+    if (result.success) {
+      enforceBackupRetention(directory, getBackupSettings(config)?.maxBackups);
     }
 
     return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (): Promise<BackupMetadata[]> => {
-    const config = loadConfig();
-    const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-    const directory =
-      currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
-
-    return listBackups(directory);
+    return listBackups(resolveBackupDirectory(readCurrentConfig()));
   });
 
+  // Restores and saves in one step, so a stale save from the renderer can't
+  // land in between. The renderer reloads afterwards.
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_RESTORE,
-    async (_, filepath: string): Promise<{ success: boolean; config?: AppConfig; error?: string }> => {
-      return restoreBackup(filepath);
+    async (_, filepath: string): Promise<ConfigReplaceResult> => {
+      if (!isBackupFilePath(filepath, resolveBackupDirectory(readCurrentConfig()))) {
+        return { success: false, error: 'Not a backup file in the backup folder' };
+      }
+      const restored = restoreBackup(filepath);
+      if (!restored.success || !restored.config) {
+        return { success: false, error: restored.error };
+      }
+      return replaceConfig(restored.config);
     }
   );
 
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_DELETE,
     async (_, filepath: string): Promise<{ success: boolean; error?: string }> => {
+      if (!isBackupFilePath(filepath, resolveBackupDirectory(readCurrentConfig()))) {
+        return { success: false, error: 'Not a backup file in the backup folder' };
+      }
       return deleteBackup(filepath);
     }
   );
@@ -1995,35 +2200,29 @@ app.whenReady().then(() => {
   // Must run before anything reads config, including the renderer's first
   // config:load over IPC.
   migrateConfigIfNeeded();
+  // Read (and if needed recover) the config before the window can ask for it.
+  initialConfigLoad = loadConfig();
+  const config = initialConfigLoad.config;
+  const currentProfile = config.profiles?.find((p) => p.id === config.currentProfileId);
 
   setupIPC();
   createWindow();
 
-  // Initialize backup system
-  const config = loadConfig();
-  const currentProfile = config.profiles.find((p) => p.id === config.currentProfileId);
-  const backupDir = currentProfile?.settings.backupSettings?.backupDirectory || getDefaultBackupDirectory();
-
-  // Ensure backup directory exists
-  if (!existsSync(backupDir)) {
-    mkdirSync(backupDir, { recursive: true });
-  }
-
-  // Create initial backup if none exist
-  const existingBackups = listBackups(backupDir);
-  if (existingBackups.length === 0) {
-    console.log('[Backup] No existing backups found, creating initial backup');
-    const result = createBackup(config, backupDir);
-    if (result.success && currentProfile?.settings.backupSettings) {
-      const hash = calculateConfigHash(config);
-      currentProfile.settings.backupSettings.lastBackupTime = new Date().toISOString();
-      currentProfile.settings.backupSettings.lastBackupHash = hash;
-      saveConfig(config);
+  // Initialize backup system. Failures here (e.g. a backup folder on a drive
+  // that isn't connected) must not stop the update check below.
+  try {
+    const diskConfig = initialConfigLoad.status === 'failed' ? null : readCurrentConfig();
+    if (diskConfig) {
+      const backupDir = resolveBackupDirectory(diskConfig);
+      if (listBackups(backupDir).length === 0) {
+        console.log('[Backup] No existing backups found, creating initial backup');
+        createBackup(diskConfig, backupDir);
+      }
+      startBackupTimer(diskConfig);
     }
+  } catch (error) {
+    console.error('[Backup] Could not initialise backups:', error);
   }
-
-  // Start auto-backup timer
-  startBackupTimer(config);
 
   // Check for updates on startup (only in production)
   if (app.isPackaged) {

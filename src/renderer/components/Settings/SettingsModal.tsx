@@ -352,14 +352,26 @@ function SettingsModal() {
     }
   };
 
+  // Import and restore replace the config on disk in the main process, which
+  // also backs up the current one first. Saves stay suspended until the reload,
+  // so the old in-memory config can't be written back over the new one.
   const handleImport = async () => {
-    const imported = await window.electronAPI.importConfig();
-    if (imported) {
-      addNotification('Configuration imported! Reloading...', 'success');
-      setTimeout(() => {
-        useAppStore.getState().loadConfig();
-      }, 500);
+    const { suspendSaves, resumeSaves } = useAppStore.getState();
+    suspendSaves();
+    try {
+      const result = await window.electronAPI.importConfig();
+      if (result.success) {
+        addNotification('Configuration imported! Reloading...', 'success');
+        setTimeout(() => window.location.reload(), 500);
+        return;
+      }
+      if (!result.canceled) {
+        addNotification(`Import failed: ${result.error}`, 'error', 0);
+      }
+    } catch (error) {
+      addNotification('Failed to import configuration', 'error');
     }
+    resumeSaves();
   };
 
   const handleCheckForUpdates = async () => {
@@ -458,26 +470,27 @@ function SettingsModal() {
   };
 
   const handleRestoreBackup = async (filepath: string, filename: string) => {
-    if (!confirm(`Restore configuration from backup "${filename}"?\n\nThis will replace your current configuration and reload the app.`)) {
+    if (!confirm(`Restore configuration from backup "${filename}"?\n\nThis will replace your current configuration (a backup of it is made first) and reload the app.`)) {
       return;
     }
 
+    const { suspendSaves, resumeSaves } = useAppStore.getState();
+    suspendSaves();
     try {
       const result = await window.electronAPI.restoreBackup(filepath);
-      if (result.success && result.config) {
-        // Save the restored config
-        await window.electronAPI.saveConfig(result.config);
+      if (result.success) {
         addNotification('Backup restored successfully. Reloading...', 'success');
         // Reload the app to apply the restored config
         setTimeout(() => {
           window.location.reload();
         }, 1000);
-      } else {
-        addNotification(`Restore failed: ${result.error}`, 'error');
+        return;
       }
+      addNotification(`Restore failed: ${result.error}`, 'error', 0);
     } catch (error) {
       addNotification('Failed to restore backup', 'error');
     }
+    resumeSaves();
   };
 
   const handleDeleteBackup = async (filepath: string, filename: string) => {
@@ -2087,9 +2100,9 @@ function SettingsModal() {
                 </div>
               </div>
 
-              {settings.backupSettings?.lastBackupTime && (
+              {backupList.length > 0 && (
                 <p className="settings-help">
-                  Last backup: {formatBackupDate(settings.backupSettings.lastBackupTime)}
+                  Last backup: {formatBackupDate(backupList[0].timestamp)}
                 </p>
               )}
 

@@ -1,10 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { AppConfig, IPC_CHANNELS, LinkCheckResult, BackupMetadata, BackupResult } from '../shared/types';
+import {
+  AppConfig,
+  IPC_CHANNELS,
+  LinkCheckResult,
+  BackupMetadata,
+  BackupResult,
+  ConfigLoadResult,
+  ConfigReplaceResult,
+} from '../shared/types';
 
 // Expose protected methods to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // Config operations
-  loadConfig: (): Promise<AppConfig> => {
+  loadConfig: (): Promise<ConfigLoadResult> => {
     return ipcRenderer.invoke(IPC_CHANNELS.LOAD_CONFIG);
   },
 
@@ -12,11 +20,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.SAVE_CONFIG, config);
   },
 
+  // Blocks until written. Only for flushing a pending save while unloading.
+  saveConfigSync: (config: AppConfig): boolean => {
+    return ipcRenderer.sendSync(IPC_CHANNELS.SAVE_CONFIG_SYNC, config);
+  },
+
   exportConfig: (): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.EXPORT_CONFIG);
   },
 
-  importConfig: (): Promise<AppConfig | null> => {
+  importConfig: (): Promise<ConfigReplaceResult> => {
     return ipcRenderer.invoke(IPC_CHANNELS.IMPORT_CONFIG);
   },
 
@@ -173,7 +186,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST);
   },
 
-  restoreBackup: (filepath: string): Promise<{ success: boolean; config?: AppConfig; error?: string }> => {
+  restoreBackup: (filepath: string): Promise<ConfigReplaceResult> => {
     return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, filepath);
   },
 
@@ -200,10 +213,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 declare global {
   interface Window {
     electronAPI: {
-      loadConfig: () => Promise<AppConfig>;
+      loadConfig: () => Promise<ConfigLoadResult>;
       saveConfig: (config: AppConfig) => Promise<boolean>;
+      saveConfigSync: (config: AppConfig) => boolean;
       exportConfig: () => Promise<boolean>;
-      importConfig: () => Promise<AppConfig | null>;
+      importConfig: () => Promise<ConfigReplaceResult>;
       fetchTitle: (url: string) => Promise<string>;
       checkLink: (url: string) => Promise<LinkCheckResult>;
       checkAllLinks: (urls: string[]) => Promise<LinkCheckResult[]>;
@@ -270,7 +284,7 @@ declare global {
       onUpdateError: (callback: (error: string) => void) => () => void;
       createBackup: () => Promise<BackupResult>;
       listBackups: () => Promise<BackupMetadata[]>;
-      restoreBackup: (filepath: string) => Promise<{ success: boolean; config?: AppConfig; error?: string }>;
+      restoreBackup: (filepath: string) => Promise<ConfigReplaceResult>;
       deleteBackup: (filepath: string) => Promise<{ success: boolean; error?: string }>;
       selectBackupDirectory: () => Promise<string | null>;
       getDefaultBackupDirectory: () => Promise<string>;
