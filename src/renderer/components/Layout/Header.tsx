@@ -741,7 +741,9 @@ function Header() {
   const handleSearchOpenInChrome = async (e: React.MouseEvent, url: string) => {
     e.stopPropagation();
     try {
-      await window.electronAPI.openInChrome(url);
+      if (!(await window.electronAPI.openInChrome(url))) {
+        addNotification('Only web (http/https) and mailto links can be opened', 'error');
+      }
     } catch {
       addNotification('Failed to open link in Chrome', 'error');
     }

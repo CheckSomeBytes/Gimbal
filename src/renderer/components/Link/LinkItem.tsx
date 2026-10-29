@@ -65,7 +65,9 @@ function LinkItem({ dayId, sectionId, link }: LinkItemProps) {
 
   const handleOpenInChrome = async (url: string) => {
     try {
-      await window.electronAPI.openInChrome(url);
+      if (!(await window.electronAPI.openInChrome(url))) {
+        addNotification('Only web (http/https) and mailto links can be opened', 'error');
+      }
     } catch (error) {
       addNotification('Failed to open link in Chrome', 'error');
     }

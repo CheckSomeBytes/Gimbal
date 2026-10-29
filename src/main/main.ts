@@ -489,22 +489,53 @@ async function checkLink(url: string): Promise<LinkCheckResult> {
   return getResult;
 }
 
-// Open URL in Chrome (fallback to default browser)
-async function openInChrome(url: string): Promise<void> {
-  // Try to open with Chrome specifically on Windows
-  const { exec } = require('child_process');
+// Normalise a link for opening, or null if it must not be opened. Only web and
+// mail links: links arrive from shared or imported configs, and openExternal
+// will happily launch file:, ms-msdt: and other protocol handlers.
+function toOpenableUrl(url: string): string | null {
+  if (typeof url !== 'string' || !url.trim()) return null;
+  let candidate = url.trim();
+  // Saved links may omit the scheme ("example.com/page").
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(candidate)) candidate = 'https://' + candidate;
+  try {
+    const parsed = new URL(candidate);
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
 
-  if (process.platform === 'win32') {
-    exec(`start chrome "${url}"`, (error: Error | null) => {
-      if (error) {
-        // Fallback to default browser
-        shell.openExternal(url);
-      }
+// chrome.exe from the standard install locations, or null if not installed.
+function findChromeExecutable(): string | null {
+  const roots = [process.env['PROGRAMFILES'], process.env['PROGRAMFILES(X86)'], process.env['LOCALAPPDATA']];
+  for (const root of roots) {
+    if (!root) continue;
+    const candidate = join(root, 'Google', 'Chrome', 'Application', 'chrome.exe');
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+// Open URL in Chrome (fallback to default browser). Chrome is started directly
+// with the URL as its own argument; building a `start chrome "<url>"` command
+// line let a quote in the URL break out and run other commands.
+async function openInChrome(url: string): Promise<boolean> {
+  const safeUrl = toOpenableUrl(url);
+  if (!safeUrl) {
+    console.warn('[Open] Refusing to open link with unsupported scheme:', url);
+    return false;
+  }
+
+  const chrome = process.platform === 'win32' && !safeUrl.startsWith('mailto:') ? findChromeExecutable() : null;
+  if (chrome) {
+    const { execFile } = require('child_process');
+    execFile(chrome, [safeUrl], (error: Error | null) => {
+      if (error) shell.openExternal(safeUrl);
     });
   } else {
-    // On other platforms, just use default browser
-    shell.openExternal(url);
+    await shell.openExternal(safeUrl);
   }
+  return true;
 }
 
 // Focus window and paste - this requires native modules
@@ -522,31 +553,32 @@ async function focusAndPaste(
   if (process.platform === 'win32') {
     const { execFile } = require('child_process');
 
+    // The pattern comes from the config, which can be shared or imported, so
+    // it never becomes part of the script text: it is passed in an environment
+    // variable and only ever compared as data. Splicing it into the script let
+    // a pattern like Zoom$(...) run arbitrary PowerShell.
+    // Case-insensitive throughout, matching the Settings "Test" button.
+    // "contains" is a literal substring match: -like treated [ ] ? * in
+    // window titles as wildcards, so the test and the live paste disagreed.
+    const matchConditions: Record<string, string> = {
+      exact: `$_.Title -eq $pattern`,
+      contains: `$_.Title.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0`,
+      regex: `$_.Title -match $pattern`,
+    };
+    const matchCondition = matchConditions[matchMode];
+    if (!matchCondition || typeof pattern !== 'string') {
+      return { success: false, error: 'Invalid window target settings' };
+    }
+
     return new Promise((resolve) => {
-      // Escape single quotes in the pattern for PowerShell
-      const escapedPattern = pattern.replace(/'/g, "''");
-
-      // Build the match condition based on mode
-      let matchCondition: string;
-      switch (matchMode) {
-        case 'exact':
-          matchCondition = `$_.Title -eq '${escapedPattern}'`;
-          break;
-        case 'contains':
-          matchCondition = `$_.Title -like '*${escapedPattern}*'`;
-          break;
-        case 'regex':
-          matchCondition = `$_.Title -match '${escapedPattern}'`;
-          break;
-      }
-
       // Enumerate every top-level window (not just per-process main windows),
       // then focus the match and paste into it.
       const psScript = `${PS_WINDOW_HELPER}
+$pattern = $env:GIMBAL_WINDOW_PATTERN
 $all = [GimbalWin]::All()
 Write-Host "DEBUG: Available windows:"
 $all | ForEach-Object { Write-Host "  - $($_.ProcessName): $($_.Title)" }
-Write-Host "DEBUG: Looking for pattern '${escapedPattern}' with condition: ${matchCondition}"
+Write-Host "DEBUG: Looking for pattern '$pattern' (${matchMode})"
 
 $matches = @($all | Where-Object { ${matchCondition} })
 if ($matches.Count -gt 1) {
@@ -576,6 +608,7 @@ if ($win) {
       execFile(
         'powershell.exe',
         ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
+        { env: { ...process.env, GIMBAL_WINDOW_PATTERN: pattern } },
         (error: Error | null, stdout: string, stderr: string) => {
           if (error) {
             console.error('PowerShell error:', error);
@@ -630,7 +663,24 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      // Already Electron's default; stated so it can't silently regress.
+      sandbox: true,
     },
+  });
+
+  // The window must only ever show the app. Dropping a link onto it would
+  // otherwise navigate there, and that page would get window.electronAPI.
+  // Reloads (import, restore) are not navigations and still work.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow?.webContents.getURL()) {
+      event.preventDefault();
+      console.warn('[Security] Blocked navigation to', url);
+    }
+  });
+  // target=_blank links and window.open open in the browser instead.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void openInChrome(url);
+    return { action: 'deny' };
   });
 
   // Load the renderer
@@ -1074,8 +1124,7 @@ function setupIPC(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_IN_CHROME, async (_, url: string) => {
-    await openInChrome(url);
-    return true;
+    return openInChrome(url);
   });
 
   // Window operations
@@ -1361,12 +1410,46 @@ function escapeJsString(value: string): string {
 }
 
 // Open a countdown timer window
+// Theme colours and font come from the config (which can be shared or
+// imported) and are written straight into the countdown page's <style>. Drop
+// the characters that could end a declaration or the style block itself.
+function cssValue(value: string | undefined, fallback: string): string {
+  const cleaned = typeof value === 'string' ? value.replace(/[<>{};\\]/g, '').trim() : '';
+  return cleaned || fallback;
+}
+
+function sanitizeTimerTheme(theme: TimerTheme): TimerTheme {
+  const alert = theme.alert;
+  return {
+    ...theme,
+    background: cssValue(theme.background, '#1a1a2e'),
+    text: cssValue(theme.text, '#eaeaea'),
+    textMuted: cssValue(theme.textMuted, '#888888'),
+    accent: cssValue(theme.accent, '#4a9eff'),
+    success: cssValue(theme.success, '#6bcf7f'),
+    danger: cssValue(theme.danger, '#ff6b6b'),
+    fontFamily: cssValue(theme.fontFamily, 'monospace'),
+    border: theme.border === undefined ? undefined : cssValue(theme.border, '#4a9eff'),
+    alert: alert
+      ? {
+          background: cssValue(alert.background, '#1a1a2e'),
+          text: cssValue(alert.text, '#eaeaea'),
+          textMuted: cssValue(alert.textMuted, '#888888'),
+          accent: cssValue(alert.accent, '#4a9eff'),
+          danger: cssValue(alert.danger, '#ff6b6b'),
+          border: alert.border === undefined ? undefined : cssValue(alert.border, '#4a9eff'),
+        }
+      : alert,
+  };
+}
+
 function openCountdownTimer(
   totalMinutes: number,
   message: string,
-  theme: TimerTheme,
+  rawTheme: TimerTheme,
   evalQrs: EvalQr[] = []
 ): boolean {
+  const theme = sanitizeTimerTheme(rawTheme);
   try {
     // Close existing countdown window if open
     if (countdownWindow && !countdownWindow.isDestroyed()) {

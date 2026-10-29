@@ -1,6 +1,36 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
+import type { Plugin } from 'vite'
+
+// Content-Security-Policy for the built renderer: only the app's own scripts
+// run, and the only remote content is the Google Fonts stylesheet. Build-only,
+// because the dev server injects an inline React Refresh script that this
+// policy would block.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ')
+
+function contentSecurityPolicy(): Plugin {
+  return {
+    name: 'gimbal-csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(
+        '<meta charset="UTF-8" />',
+        `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}" />`
+      )
+    }
+  }
+}
 
 export default defineConfig({
   main: {
@@ -46,7 +76,7 @@ export default defineConfig({
         }
       }
     },
-    plugins: [react()],
+    plugins: [react(), contentSecurityPolicy()],
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared')
