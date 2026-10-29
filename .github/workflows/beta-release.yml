@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # Pinned: Electron's GPU process crashes at startup on the
+    # windows-2025 image (windows-latest since Oct 2026), failing the smoke test.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout code
