@@ -78,6 +78,15 @@ const timeout = setTimeout(() => {
 }, TIMEOUT_MS);
 timeout.unref?.();
 
+// CI sets ELECTRON_DISABLE_GPU, but Electron itself ignores that variable.
+// GitHub's Windows runners have no usable GPU and the GPU process crashes on
+// startup (windows-2025 image), so turn hardware acceleration off here. Must
+// happen before the app is ready, i.e. before main.js is loaded.
+if (process.env.ELECTRON_DISABLE_GPU) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+}
+
 console.log('Booting ' + MAIN);
 require(MAIN);
 
