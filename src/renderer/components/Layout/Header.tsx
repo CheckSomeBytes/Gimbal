@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss';
 import { TIMEZONES, ScheduledTime, Link, Note } from '../../../shared/types';
+import SchedulePopup from './SchedulePopup';
 import TodoPopup from '../Todo/TodoPopup';
 import MarkdownEditor from '../Markdown/MarkdownEditor';
 import { markdownToPlainText } from '../Markdown/markdown';
@@ -224,6 +225,9 @@ function Header() {
   const timeEstimateDismiss = useOverlayDismiss(() => setShowTimeEstimatePopup(false));
   const quickPollDismiss = useOverlayDismiss(() => setShowQuickPollPopup(false));
   const searchDismiss = useOverlayDismiss(() => setShowSearchPopup(false));
+  const [showSchedulePopup, setShowSchedulePopup] = useState(false);
+  const closeSchedulePopup = useCallback(() => setShowSchedulePopup(false), []);
+  const scheduleDismiss = useOverlayDismiss(closeSchedulePopup);
   const [showQuickPollSaveDropdown, setShowQuickPollSaveDropdown] = useState(false);
   const [quickPollSaveTitle, setQuickPollSaveTitle] = useState('');
   const [quickPollSaveDayId, setQuickPollSaveDayId] = useState('');
@@ -1072,10 +1076,15 @@ function Header() {
         </div>
 
         {nextScheduled && (
-          <div className={`header-countdown ${isBreakAlertActive ? 'header-countdown--alert' : ''}`}>
+          <button
+            type="button"
+            className={`header-countdown ${isBreakAlertActive ? 'header-countdown--alert' : ''}`}
+            onClick={() => setShowSchedulePopup(true)}
+            title="Show today's schedule in class and local time"
+          >
             <span className="header-countdown-label">{nextScheduled.time.label}</span>
             <span className="header-countdown-time">{formatCountdown(nextScheduled.secondsUntil)}</span>
-          </div>
+          </button>
         )}
 
         <button
@@ -1211,6 +1220,17 @@ function Header() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Today's schedule, in class and local time */}
+      {showSchedulePopup && (
+        <SchedulePopup
+          scheduledTimes={scheduledTimes}
+          classTimezone={timezone}
+          now={currentTime}
+          onClose={closeSchedulePopup}
+          overlayProps={scheduleDismiss}
+        />
       )}
 
       {/* Time Estimate Popup */}
